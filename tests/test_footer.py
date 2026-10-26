@@ -67,5 +67,8 @@ def test_registered():
         def register_hook(self, name, fn):
             seen.append(name)
 
+        def register_command(self, *a, **k):
+            pass
+
     register(Ctx())
     assert "transform_llm_output" in seen
