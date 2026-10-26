@@ -12,8 +12,8 @@ Enforces configurable daily and weekly spending budgets (in USD) per Discord use
 - **USD Spending Limits**: Configured in `~/.hermes/config.yaml` with global defaults and per-user overrides.
 - **90% Deterministic Warning Footers**: Automatically appends a zero-LLM usage warning footer to responses when a user exceeds 90% of their daily or weekly limit.
 - **Swedish Messages**: Every reply, footer and `/quota` line shown to Discord users is in plain Swedish, with "per dag" / "per vecka", Swedish weekdays, the 24-hour clock and amounts in kronor ("4,50 kr") converted from the USD ledger at a fixed rate of 10 SEK per USD. Logs and the `hermes quota` admin CLI stay in English and USD. Examples:
-  - Reply when the limit is reached: `⚠️ Pengarna är slut` / `Du har använt upp dina pengar per dag:` / `• Per dag: 10,40 kr av 10,00 kr (104%) — återställs idag kl. 12:00`
-  - Warning footer: `⚠️ Snart slut: du har använt 92% av dina pengar per dag (9,20 kr av 10,00 kr). Återställs kl. 12:00.`
+  - Reply when the limit is reached: `⚠️ Pengarna är slut` / `Du har använt upp din budget per dag:` / `• Per dag: 10,40 kr av 10,00 kr (104%) — återställs idag kl. 12:00`
+  - Warning footer: `⚠️ Budgetvarning: Du har använt 92% av din budget per dag (9,20 kr av 10,00 kr). Återställs kl. 12:00.`
   - Exhausted footer: `⚠️ Pengarna är slut: du har använt 52,00 kr av 50,00 kr per vecka (104%). Du kan skriva igen fredag kl. 12:00.`
   - `/quota`: `• Per dag: 5,80 kr kvar av 10,00 kr (42% använt — återställs idag kl. 12:00)`
   - Unavailable: `Kan inte kolla hur mycket pengar du har kvar, försök senare.`

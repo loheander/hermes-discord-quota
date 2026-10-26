@@ -36,7 +36,7 @@ def test_below_threshold_none():
 
 def test_warning_at_90():
     out = run(make("0.92"))
-    assert out.startswith("Hello\n\n") and "Snart slut" in out and "92%" in out
+    assert out.startswith("Hello\n\n") and "Budgetvarning: Du har använt" in out and "92%" in out
     assert out == run(make("0.92"))
 
 

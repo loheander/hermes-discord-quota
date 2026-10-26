@@ -42,7 +42,7 @@ def test_status_for_invoker():
     c = make()
     assert c.observe_dispatch(event()) is None
     out = c.handle("")
-    assert "Dina pengar kvar" in out and "5,80 kr kvar av 10,00 kr" in out
+    assert "Din budget" in out and "5,80 kr kvar av 10,00 kr" in out
     assert "Läge: Ok" in out
 
 
@@ -59,7 +59,7 @@ def test_no_invoker_explains():
 def test_resolver_preferred():
     c = make()
     c._resolver = SimpleNamespace(resolve=lambda **k: "7")
-    assert "Dina pengar kvar" in c.handle("")
+    assert "Din budget" in c.handle("")
 
 
 def test_exceeded_and_blocked_and_unlimited():
@@ -89,5 +89,5 @@ def test_bot_clears_invoker():
 
 
 def test_swedish_constants():
-    assert DESCRIPTION == "Visa hur mycket pengar du har kvar på Discord"
-    assert NOT_DISCORD_REPLY == "/quota visar hur mycket pengar du har kvar och fungerar bara när du skriver till boten på Discord."
+    assert DESCRIPTION == "Visa din budget på Discord"
+    assert NOT_DISCORD_REPLY == "/quota visar din budget och fungerar bara när du skriver till boten på Discord."

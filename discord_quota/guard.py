@@ -31,7 +31,7 @@ from .status import evaluate
 logger = logging.getLogger("hermes_discord_quota")
 
 BLOCK_MESSAGE = (
-    "Pengarna tog slut mitt i svaret: gränsen per dag eller per vecka är nådd. "
+    "Pengarna är slut mitt i svaret: gränsen per dag eller per vecka är nådd. "
     "Sluta anropa verktyg och berätta för användaren på svenska att svaret avbröts "
     "eftersom pengarna är slut."
 )

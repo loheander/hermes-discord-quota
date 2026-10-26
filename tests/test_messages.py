@@ -61,7 +61,7 @@ def test_unavailable_reply_exact():
 
 def test_concurrent_reply():
     assert concurrent_reply(Decimal("0.05")) == (
-        "Du har en fråga som fortfarande pågår och du har lite pengar kvar "
+        "Du har en fråga som fortfarande pågår och din återstående budget är låg "
         "(0,50 kr). Vänta tills den är klar och försök igen.")
 
 
@@ -70,7 +70,7 @@ def test_exceeded_reply_snapshot():
     s = st(1.0, 5.0, "1.04", "3.18", now)
     assert quota_exceeded_reply(s, now, Z) == (
         "⚠️ Pengarna är slut\n\n"
-        "Du har använt upp dina pengar per dag:\n"
+        "Du har använt upp din budget per dag:\n"
         "• Per dag: 10,40 kr av 10,00 kr (104%) — återställs idag kl. 12:00\n"
         "• Per vecka: 31,80 kr av 50,00 kr (64%) — återställs fredag kl. 12:00\n\n"
         "Du kan inte skriva till boten förrän det återställs. Skriv /quota för att se hur mycket du har kvar.")
@@ -78,7 +78,7 @@ def test_exceeded_reply_snapshot():
 
 def test_exceeded_both_windows():
     s = st(1.0, 5.0, "1.04", "5.5")
-    assert "Du har använt upp dina pengar per dag och per vecka:" in quota_exceeded_reply(s, NOW, Z)
+    assert "Du har använt upp din budget per dag och per vecka:" in quota_exceeded_reply(s, NOW, Z)
 
 
 def test_blocked():
@@ -86,7 +86,7 @@ def test_blocked():
     assert quota_exceeded_reply(s, NOW, Z) == blocked_reply()
     assert blocked_reply() == (
         "🚫 Ingen åtkomst\n\n"
-        "Du har inga pengar att använda den här boten med.\n"
+        "Du har ingen budget för den här boten.\n"
         "Fråga den som driver boten om du kan få använda den.")
 
 
@@ -94,7 +94,7 @@ def test_status_text_snapshot():
     now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
     s = st(1.0, 5.0, "0.42", "1.85", now)
     assert quota_status_text(s, now, Z) == (
-        "📊 Dina pengar kvar\n\n"
+        "📊 Din budget\n\n"
         "• Per dag: 5,80 kr kvar av 10,00 kr (42% använt — återställs idag kl. 12:00)\n"
         "• Per vecka: 31,50 kr kvar av 50,00 kr (37% använt — återställs fredag kl. 12:00)\n"
         "• Läge: Ok")
@@ -110,7 +110,7 @@ def test_unlimited_shown():
 def test_footers():
     now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
     assert warning_footer(st(1.0, 5.0, "0.92", "1", now), now, Z) == (
-        f"{RULE}\n⚠️ Snart slut: du har använt 92% av dina pengar per dag (9,20 kr av 10,00 kr). "
+        f"{RULE}\n⚠️ Budgetvarning: Du har använt 92% av din budget per dag (9,20 kr av 10,00 kr). "
         "Återställs kl. 12:00.")
     assert warning_footer(st(1.0, 5.0, "1.04", "1", now), now, Z) == (
         f"{RULE}\n⚠️ Pengarna är slut: du har använt 10,40 kr av 10,00 kr per dag (104%). "
@@ -135,5 +135,29 @@ def test_no_usd_or_old_words_in_any_text():
     ]
     for t in texts:
         for bad in ("USD", "$", "dagliga", "veckovisa", "Dagens", "Veckans", "kvot", "Kvot",
-                    "förfrågan", "förfrågningar", "administratör", "fönster"):
+                    "förfrågan", "förfrågningar", "administratör", "fönster", "pengar att"):
             assert bad not in t, (bad, t)
+
+
+def test_budget_wording_and_no_kvot_anywhere():
+    from discord_quota import guard
+    from discord_quota.command import DESCRIPTION, NOT_DISCORD_REPLY
+
+    now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
+    exceeded = quota_exceeded_reply(st(1.0, 5.0, "1.04", "5.5", now), now, Z)
+    generic = quota_exceeded_reply(st(1.0, 5.0, "0.1", "0.1", now), now, Z)
+    exhausted_footer = warning_footer(st(1.0, 5.0, "1.04", "1", now), now, Z)
+    warn_footer = warning_footer(st(1.0, 5.0, "0.92", "1", now), now, Z)
+    assert exceeded.startswith("⚠️ Pengarna är slut")
+    assert generic.startswith("⚠️ Pengarna är slut")
+    assert exhausted_footer.split("\n", 1)[1].startswith("⚠️ Pengarna är slut")
+    assert warn_footer.split("\n", 1)[1].startswith("⚠️ Budgetvarning: Du har använt")
+    assert "din återstående budget är låg" in concurrent_reply(Decimal("0.05"))
+    texts = [
+        exceeded, generic, exhausted_footer, warn_footer, blocked_reply(), unavailable_reply(),
+        concurrent_reply(Decimal("0.05")), DESCRIPTION, NOT_DISCORD_REPLY, guard.BLOCK_MESSAGE,
+        quota_status_text(st(1.0, 5.0, "0.42", "1.85", now), now, Z),
+        quota_status_text(st(0.0, 5.0, "0", "0", now), now, Z),
+    ]
+    for t in texts:
+        assert "kvot" not in t.lower(), t
