@@ -33,6 +33,7 @@ def register(ctx: Any) -> None:
     """Called once by Hermes with a ``PluginContext``."""
     from .admission import AdmissionGate
     from .config import load_config
+    from .footer import FooterHook
     from .guard import MidTurnGuard
     from .ledger import Ledger, default_db_path
     from .recorder import SpendRecorder
@@ -56,3 +57,4 @@ def register(ctx: Any) -> None:
     ctx.register_hook("post_api_request", recorder.post_api_request)
     ctx.register_hook("subagent_stop", SubagentAccountant(ledger, resolver, after_record=guard.after_record).subagent_stop)
     ctx.register_hook("pre_tool_call", guard.pre_tool_call)
+    ctx.register_hook("transform_llm_output", FooterHook(getter, ledger, resolver).transform_llm_output)
