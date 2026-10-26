@@ -91,3 +91,22 @@ def test_registered(fake_ctx, tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     plugin.register(fake_ctx)
     assert "post_api_request" in fake_ctx.hook_names()
+
+
+def test_moa_references_charged_once_per_turn():
+    led = FakeLedger()
+    refs = [{"model": "a", "provider": "p", "usage": {}}]
+    rec = SpendRecorder(led, FakeResolver(), est({"m": "1", "a": "0.25"}))
+    rec.post_api_request(**KW, moa_references=refs)
+    rec.post_api_request(**KW, moa_references=list(refs))
+    assert [r[2] for r in led.rows] == [Decimal("1.25"), Decimal("1")]
+    rec.post_api_request(**{**KW, "turn_id": "t2"}, moa_references=refs)
+    assert led.rows[2][2] == Decimal("1.25")
+
+
+def test_moa_dedupe_state_bounded():
+    rec = SpendRecorder(FakeLedger(), FakeResolver(), est({"m": "1"}))
+    rec._max_turns = 3
+    for i in range(10):
+        rec.post_api_request(**{**KW, "turn_id": f"t{i}"}, moa_references=[{"model": "a"}])
+    assert len(rec._seen_refs) == 3

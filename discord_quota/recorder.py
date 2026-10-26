@@ -9,11 +9,21 @@ Payload keys verified against ``agent/turn_response_intake.py``: session_id,
 turn_id, task_id, platform, model, provider, base_url, usage (CanonicalUsage
 summary dict), moa_references (list of per-advisor dicts with model, provider,
 usage, cost_usd, cost_status, or None).
+
+Known gaps: Hermes MoA leaves ``_last_reference_metrics`` set on fan-out cache
+hits, so identical ``moa_references`` repeat on later calls of one turn; advisor
+charges are deduplicated per (session_id, turn_id) by fingerprint. The MoA
+aggregator's virtual model/provider have no pricing entry, so the aggregator
+call itself accrues $0 (with an "Unpriced model" warning), and advisor tokens
+are not included in ledger token counts. Pricing via the real aggregator slot
+is not done here.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+from collections import OrderedDict
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
@@ -46,6 +56,31 @@ class SpendRecorder:
         self._ledger = ledger
         self._resolver = resolver
         self._estimate = estimator or _default_estimator
+        self._seen_refs: "OrderedDict[tuple, set[str]]" = OrderedDict()
+        self._max_turns = 256
+
+    def _fresh_refs(self, key: tuple, refs: Any) -> list:
+        """Refs not yet charged for this turn (MoA repeats refs on cache hits)."""
+        if not isinstance(refs, (list, tuple)):
+            return []
+        seen = self._seen_refs.get(key)
+        if seen is None:
+            seen = self._seen_refs[key] = set()
+            while len(self._seen_refs) > self._max_turns:
+                self._seen_refs.popitem(last=False)
+        else:
+            self._seen_refs.move_to_end(key)
+        fresh = []
+        for ref in refs:
+            try:
+                fp = json.dumps(ref, sort_keys=True, default=str)
+            except (TypeError, ValueError):
+                fp = repr(ref)
+            if fp in seen:
+                continue
+            seen.add(fp)
+            fresh.append(ref)
+        return fresh
 
     def _price(self, model: str, usage: dict, provider: str | None,
                base_url: str | None) -> Decimal | None:
@@ -108,7 +143,7 @@ class SpendRecorder:
             logger.warning("Unpriced model usage: %s on %s - accruing $0.00",
                            model or "?", provider or "?")
             cost = Decimal(0)
-        cost += self._moa_cost(kw.get("moa_references"))
+        cost += self._moa_cost(self._fresh_refs((session_id, turn_id), kw.get("moa_references")))
         total = round_cost(cost)
         input_tokens = _int(usage.get("input_tokens")) + _int(usage.get("cache_read_tokens")) \
             + _int(usage.get("cache_write_tokens"))
