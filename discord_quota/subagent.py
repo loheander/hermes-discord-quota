@@ -3,8 +3,8 @@
 Payload verified against ``tools/delegate_tool_results.py``: parent_session_id,
 parent_turn_id, child_session_id (plus child_role/summary/status, no cost). It
 fires on the parent's thread, once per child. The payload carries no cost, so
-the child's total is read from Hermes' ``sessions`` table (``estimated_cost_usd``,
-falling back to ``actual_cost_usd``) via an injectable ``cost_lookup``.
+the child's total is read from Hermes' ``sessions`` table (``actual_cost_usd`` when
+positive, falling back to ``estimated_cost_usd``) via an injectable ``cost_lookup``.
 
 Dedupe: if the ledger already holds any row for the child session (recorded per
 call by ``post_api_request``) or a prior 'subagent' row, nothing is written.
@@ -55,7 +55,9 @@ def _default_cost_lookup(child_session_id: str) -> tuple[Decimal | None, str, st
 
 class SubagentAccountant:
     def __init__(self, ledger: Any, resolver: Any,
-                 cost_lookup: Callable[[str], tuple] | None = None) -> None:
+                 cost_lookup: Callable[[str], tuple] | None = None,
+                 after_record: Callable | None = None) -> None:
+        self._after_record = after_record
         self._ledger = ledger
         self._resolver = resolver
         self._lookup = cost_lookup or _default_cost_lookup
@@ -83,3 +85,9 @@ class SubagentAccountant:
                 return
             self._ledger.record(user, child, round_cost(cost), model, provider,
                                 source_kind="subagent")
+        if self._after_record is not None:  # PLAN.md 6.3 step 5; never raises
+            try:
+                self._after_record(user, kw.get("parent_session_id") or child,
+                                   kw.get("parent_turn_id") or None, 1)  # parent is mid delegate tool call
+            except Exception:
+                logger.warning("discord_quota: after_record failed", exc_info=True)

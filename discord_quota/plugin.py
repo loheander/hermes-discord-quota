@@ -54,5 +54,5 @@ def register(ctx: Any) -> None:
     ctx.register_hook("subagent_start", gate.subagent_start)
     ctx.register_hook("on_session_end", gate.on_session_end)
     ctx.register_hook("post_api_request", recorder.post_api_request)
-    ctx.register_hook("subagent_stop", SubagentAccountant(ledger, resolver).subagent_stop)
+    ctx.register_hook("subagent_stop", SubagentAccountant(ledger, resolver, after_record=guard.after_record).subagent_stop)
     ctx.register_hook("pre_tool_call", guard.pre_tool_call)
