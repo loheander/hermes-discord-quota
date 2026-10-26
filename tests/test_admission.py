@@ -150,11 +150,58 @@ def test_ignored_events():
     assert ad.sent == []
 
 
-def test_exception_never_escapes():
+def test_ledger_error_fails_closed_with_reply():
     gate, ad, gw, _ = make(ledger=FakeLedger(boom=True))
-    assert call(gate, gw, Event()) is None
+    assert call(gate, gw, Event()) == {"action": "skip", "reason": "discord_quota_unavailable"}
+    assert len(ad.sent) == 1 and "temporarily unavailable" in ad.sent[0][1]
+
+
+def test_config_error_fails_closed_but_bypass_and_non_discord_pass():
+    def boom():
+        raise RuntimeError("cfg")
+    ad = FakeAdapter()
+    gate = AdmissionGate(boom, FakeLedger(), UserResolver(context_getter=lambda: ("", "")))
+    gw = FakeGateway(ad)
+    assert call(gate, gw, Event())["reason"] == "discord_quota_unavailable"
+    assert call(gate, gw, Event("/quota")) is None
+    assert call(gate, gw, Event(source=src(platform=SimpleNamespace(value="telegram")))) is None
+    assert call(gate, gw, Event(source=src(is_bot=True))) is None
+    assert call(gate, gw, Event(internal=True)) is None
+
+
+def test_unavailable_warning_rate_limited(caplog):
+    gate, ad, gw, _ = make(ledger=FakeLedger(boom=True))
+    for _ in range(3):
+        call(gate, gw, Event())
+    assert caplog.text.count("fail closed") == 1
+
+
+def test_garbage_event_never_escapes():
+    gate, ad, gw, _ = make()
     assert gate.pre_gateway_dispatch(event=object(), gateway=None) is None
     assert gate.pre_gateway_dispatch() is None
+
+
+def test_failed_send_result_logged(caplog):
+    class Bad(FakeAdapter):
+        async def send(self, chat_id, content, reply_to=None, metadata=None):
+            return SimpleNamespace(success=False, error="403 forbidden")
+    gate, ad, gw, _ = make(adapter=Bad())
+    assert call(gate, gw, Event())["action"] == "skip"
+    assert "403 forbidden" in caplog.text
+
+
+def test_ttl_config_getter():
+    from discord_quota.plugin import _ttl_config_getter
+    t = [0.0]
+    n = [0]
+    def loader():
+        n[0] += 1
+        return n[0]
+    g = _ttl_config_getter(loader, ttl=30, clock=lambda: t[0])
+    assert (g(), g()) == (1, 1)
+    t[0] = 31
+    assert g() == 2
 
 
 def test_binding_hooks():

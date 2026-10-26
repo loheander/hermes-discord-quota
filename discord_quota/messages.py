@@ -22,6 +22,8 @@ BLOCKED_REPLY = (
     "Please contact the bot administrator to request access."
 )
 
+UNAVAILABLE_REPLY = "Quota check is temporarily unavailable, please try again later."
+
 _CENT = Decimal("0.01")
 
 
@@ -82,6 +84,10 @@ def _spend(w: WindowStatus) -> str:
 
 def is_blocked(status: QuotaStatus) -> bool:
     return any(w.state is WindowState.BLOCKED for w in status.blocking)
+
+
+def unavailable_reply() -> str:
+    return UNAVAILABLE_REPLY
 
 
 def blocked_reply() -> str:

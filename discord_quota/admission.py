@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from .messages import blocked_reply, is_blocked, quota_exceeded_reply
+from .messages import blocked_reply, is_blocked, quota_exceeded_reply, unavailable_reply
 from .resolver import DISCORD, UserResolver
 from .status import evaluate
 
@@ -34,6 +35,8 @@ logger = logging.getLogger("hermes_discord_quota")
 
 BYPASS_COMMANDS = frozenset({"quota", "help", "whoami", "stop"})
 SKIP_REASON = "discord_quota_exceeded"
+UNAVAILABLE_REASON = "discord_quota_unavailable"
+WARN_INTERVAL_SECONDS = 60.0
 SKIP = {"action": "skip", "reason": SKIP_REASON}
 
 
@@ -58,20 +61,27 @@ class AdmissionGate:
         self._resolver = resolver
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._pending: set[asyncio.Future] = set()
+        self._last_warn = -WARN_INTERVAL_SECONDS
 
     # -- pre_gateway_dispatch -------------------------------------------
     def pre_gateway_dispatch(self, event: Any = None, gateway: Any = None,
                              session_store: Any = None, **_: Any) -> dict | None:
         try:
-            return self._gate(event, gateway, session_store)
+            target = self._classify(event)
         except Exception:
-            logger.warning("discord_quota admission gate failed", exc_info=True)
+            logger.warning("discord_quota event classification failed", exc_info=True)
             return None
+        if target is None:
+            return None  # not a gated Discord event: never blocked
+        source, user_id = target
+        try:
+            return self._admit(source, user_id, gateway, session_store)
+        except Exception:
+            return self._unavailable(source, gateway)
 
-    def _gate(self, event: Any, gateway: Any, session_store: Any) -> dict | None:
-        config = self._config()
-        if not getattr(config, "enabled", False):
-            return None
+    @staticmethod
+    def _classify(event: Any) -> tuple[Any, str] | None:
+        """(source, user_id) for a Discord, non-bypass, non-bot event; else None."""
         source = getattr(event, "source", None)
         if source is None or getattr(event, "internal", False):
             return None
@@ -86,24 +96,36 @@ class AdmissionGate:
             command = None
         if command in BYPASS_COMMANDS:
             return None
+        return source, user_id
 
+    def _admit(self, source: Any, user_id: str, gateway: Any, session_store: Any) -> dict | None:
+        config = self._config()
+        if not getattr(config, "enabled", False):
+            return None
         key = _session_key(session_store, source)
         if key:
             self._resolver.bind_session(DISCORD, user_id, session_key=key)
-
         now = self._clock()
-        try:
-            status = evaluate(user_id, config, self._ledger, now)
-        except Exception:
-            logger.warning("discord_quota status evaluation failed; admitting", exc_info=True)
-            return None
+        status = evaluate(user_id, config, self._ledger, now)
         if status.admitted:
             return None
-
         message = (blocked_reply() if is_blocked(status)
                    else quota_exceeded_reply(status, now, config.timezone))
         self._deliver(gateway, source, message)
         return dict(SKIP)
+
+    def _unavailable(self, source: Any, gateway: Any) -> dict:
+        """Fail closed: the quota check itself failed for a gated event."""
+        mono = time.monotonic()
+        if mono - self._last_warn >= WARN_INTERVAL_SECONDS:
+            self._last_warn = mono
+            logger.warning("discord_quota check failed; rejecting turn (fail closed)",
+                           exc_info=True)
+        try:
+            self._deliver(gateway, source, unavailable_reply())
+        except Exception:
+            pass
+        return {"action": "skip", "reason": UNAVAILABLE_REASON}
 
     # -- delivery ---------------------------------------------------------
     def _deliver(self, gateway: Any, source: Any, message: str) -> None:
@@ -133,7 +155,10 @@ class AdmissionGate:
         thread_id = getattr(source, "thread_id", None)
         metadata = {"thread_id": thread_id} if thread_id is not None else None
         try:
-            await adapter.send(source.chat_id, message, metadata=metadata)
+            result = await adapter.send(source.chat_id, message, metadata=metadata)
+            if getattr(result, "success", True) is False:
+                logger.warning("Quota rejection not delivered on Discord: %s",
+                               getattr(result, "error", None))
         except Exception:
             logger.warning("Failed to deliver quota rejection on Discord", exc_info=True)
 
