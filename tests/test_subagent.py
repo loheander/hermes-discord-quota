@@ -128,3 +128,24 @@ def test_default_lookup_missing_db_does_not_raise_through_hook(tmp_path, monkeyp
     led = Ledger(tmp_path / "q.db")
     SubagentAccountant(led, R()).subagent_stop(**KW)
     assert led.recent("42") == []
+
+
+def test_free_billing_provider_records_zero(tmp_path):
+    from discord_quota.config import parse_config
+    led = Ledger(tmp_path / "q.db")
+    cfg = parse_config({"enabled": True, "free_providers": ["vertex"]})
+    acc = SubagentAccountant(led, R(), lambda cid: (Decimal("0.5"), "m", "Vertex"),
+                             config_getter=lambda: cfg)
+    acc.subagent_stop(**KW)
+    rows = led.recent("42")
+    assert len(rows) == 1 and rows[0].cost_usd == 0 and rows[0].source_kind == "subagent"
+
+
+def test_paid_billing_provider_still_charged(tmp_path):
+    from discord_quota.config import parse_config
+    led = Ledger(tmp_path / "q.db")
+    cfg = parse_config({"enabled": True, "free_providers": ["vertex"]})
+    acc = SubagentAccountant(led, R(), lambda cid: (Decimal("0.5"), "m", "deepseek"),
+                             config_getter=lambda: cfg)
+    acc.subagent_stop(**KW)
+    assert led.recent("42")[0].cost_usd == Decimal("0.5")

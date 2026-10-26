@@ -80,6 +80,7 @@ discord_quota:
   enabled: true
   timezone: "Europe/Stockholm" # Default: Europe/Stockholm
   warn_threshold: 0.90         # Append footer at >= 90% spend (default: 0.90)
+  free_providers: [vertex]     # Calls answered by these providers cost $0 (default: none)
 
   # Global defaults applied to all Discord users unless overridden
   default:
@@ -110,6 +111,7 @@ discord_quota:
 - `v == 0.0`: **Blocked**. User cannot initiate turns.
 - `v > 0` (e.g. `1.50`): **Active budget** in USD.
 - **Override Completeness**: An entry in `users` completely overrides `default`. If a field (`daily_usd` or `weekly_usd`) is omitted in a user override entry, it defaults to `0.0` (fail-closed).
+- **`free_providers`**: list of provider names (case-insensitive, stripped; default empty). A call whose `post_api_request` `provider` is listed is recorded at $0 (model, provider and tokens kept, no "Unpriced" warning). Hermes fires `post_api_request` only after a successful response, with `provider=agent.provider` after any fallback switch (`agent/agent_init.py`), so a 429'd vertex attempt fires nothing and the fallback's answer is charged under the fallback's provider. MoA advisor refs are judged by their own `provider`; the subagent state.db fallback (6.4) by `billing_provider` only (a child that mixed providers is judged by that field alone). Read through the 30s TTL config getter, so edits apply without a restart. Cache pricing is unchanged.
 
 ---
 

@@ -54,7 +54,9 @@ def _default_estimator(model: str, usage: dict, provider: str | None, base_url: 
 
 class SpendRecorder:
     def __init__(self, ledger: Any, resolver: Any, estimator: Callable | None = None,
-                 after_record: Callable | None = None) -> None:
+                 after_record: Callable | None = None,
+                 config_getter: Callable | None = None) -> None:
+        self._config_getter = config_getter
         self._after_record = after_record
         self._ledger = ledger
         self._resolver = resolver
@@ -110,12 +112,24 @@ class SpendRecorder:
             return None
         return value if value.is_finite() else None
 
+    def _is_free(self, provider: Any) -> bool:
+        """Free-provider check against the current (TTL-cached) config; fails to paid."""
+        if self._config_getter is None:
+            return False
+        try:
+            return bool(self._config_getter().is_free_provider(provider))
+        except Exception:
+            logger.warning("discord_quota: free_providers lookup failed", exc_info=True)
+            return False
+
     def _moa_cost(self, refs: Any) -> Decimal:
         total = Decimal(0)
         if not isinstance(refs, (list, tuple)):
             return total
         for ref in refs:
             if not isinstance(ref, dict):
+                continue
+            if self._is_free(ref.get("provider")):
                 continue
             usage = ref.get("usage") or {}
             model = str(ref.get("model") or "")
@@ -150,7 +164,10 @@ class SpendRecorder:
         usage = kw.get("usage") or {}
         if not isinstance(usage, dict):
             usage = {}
-        cost = self._price(model, usage, provider or None, kw.get("base_url"))
+        if self._is_free(provider):  # PLAN.md 3: free provider answered this call
+            cost = Decimal(0)
+        else:
+            cost = self._price(model, usage, provider or None, kw.get("base_url"))
         if cost is None:
             logger.warning("Unpriced model usage: %s on %s - accruing $0.00",
                            model or "?", provider or "?")

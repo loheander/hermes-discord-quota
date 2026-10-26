@@ -72,6 +72,12 @@ class QuotaConfig:
     warn_threshold: float = DEFAULT_WARN_THRESHOLD
     default: Limits = field(default_factory=Limits)
     users: Mapping[str, Limits] = field(default_factory=dict)
+    free_providers: tuple = ()
+
+    def is_free_provider(self, provider: Any) -> bool:
+        """True when calls answered by ``provider`` cost $0 (case-insensitive)."""
+        name = str(provider or "").strip().lower()
+        return bool(name) and name in self.free_providers
 
     def limits_for(self, user_id: Any) -> tuple[float, float]:
         """Return ``(daily, weekly)``; a users entry fully supersedes default."""
@@ -148,6 +154,25 @@ def _enabled(raw: Any) -> bool:
     return True
 
 
+def _free_providers(raw: Any) -> tuple:
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        logger.warning("discord_quota: free_providers must be a list, got %r; ignored", raw)
+        return ()
+    out = []
+    for item in raw:
+        if not isinstance(item, str):
+            logger.warning("discord_quota: ignoring non-string free_providers entry %r", item)
+            continue
+        name = item.strip().lower()
+        if name and name not in out:
+            out.append(name)
+    return tuple(out)
+
+
 def _strict_key(v: float) -> float:
     return math.inf if v < 0 else v
 
@@ -189,6 +214,7 @@ def parse_config(section: Any) -> QuotaConfig:
         warn_threshold=_threshold(section.get("warn_threshold")),
         default=_limits(section.get("default"), "default"),
         users=users,
+        free_providers=_free_providers(section.get("free_providers")),
     )
 
 
