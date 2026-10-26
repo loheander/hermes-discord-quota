@@ -1,0 +1,17 @@
+[project]
+name = "hermes-discord-quota"
+version = "0.1.0"
+description = "Hermes Agent plugin: per-user Discord spending quotas"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--import-mode=importlib"
+
+[tool.uv]
+package = false
