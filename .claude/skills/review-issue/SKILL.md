@@ -17,16 +17,15 @@ Run from `/home/lo/repo/hermes-discord-quota`. Requires `.claude/runs/issue-<N>/
    "Read and follow .claude/agents/issue-reviewer.md as your role; do not edit files."). Give it issue N,
    the PR number, round K, and the open retained comments verbatim. Save its JSON to `review-<K>.json`.
 4. **Update status.** For each entry in `previous`, write its status into `status.json`.
-5. **Triage with Jev** (skill `jev-classify`). Write the findings as JSONL items to `triage-<K>-items.jsonl`:
-   `{"id": "R2-1", "issue": "<issue title>", "file": "...:<line>", "severity": "...", "comment": "..."}`. Run
-   `python3 -I ~/.claude/skills/jev-classify/scripts/jev_decide.py --spec .claude/skills/review-issue/triage-spec.json --items <items> > triage-<K>-out.jsonl`.
-   **Retain** a finding when `actionable.value >= 0.6` and `impact.value != "none"`.
-   Flag for your own judgement (do not silently drop) any finding with actionable in 0.4–0.6, impact
-   confidence < 0.5, or severity `high` that Jev would drop; decide those yourself and note why.
-   Treat Jev errors as "retain", never as "drop".
-6. **Persist.** Write `retained-<K>.json` (the retained findings with Jev scores) and mark each as
-   `unresolved` in `status.json`. Post one PR comment summarising the round:
-   `gh pr comment <pr> --body-file <file>` with retained comments (id, file:line, impact, text), dropped
-   comments in a collapsed `<details>` with their scores, and earlier comments' status.
+5. **Triage with Jev** (skill `jev-classify`). If the reviewer's final message has no JSON block, ask it once via
+   SendMessage to resend only the block (no re-review). Save the JSON to `review-<K>.json`, then run
+   `python3 .claude/skills/review-issue/triage.py .claude/runs/issue-<N> <K> "#<N> <issue title>"`. It updates
+   `status.json` from `previous`, sends the findings to Jev with `triage-spec.json`, and keeps a finding when
+   `actionable >= 0.6` and `impact != "none"`. A Jev error counts as "keep". It writes `retained-<K>.json` (new
+   ones marked `unresolved`) and the PR comment `comment-<K>.md`, and prints kept, dropped, `flagged` and open ids.
+   Decide every `flagged` finding yourself (actionable 0.4–0.6, impact confidence < 0.5, or a dropped `high`)
+   and note why. If a retained comment is partly out of the issue's scope, append an "Orchestrator scoping"
+   note to `comment-<K>.md` and narrow the fix request.
+6. **Post.** `gh pr comment <pr> --body-file .claude/runs/issue-<N>/comment-<K>.md`.
 7. **Report** the list of open comments to fix (retained this round + earlier unresolved), the test result
    from the review, and the counts kept/dropped.

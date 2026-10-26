@@ -28,7 +28,8 @@ push; Bash is for `git`, `gh`, and running tests only.
 
 ## Output
 
-End with exactly one fenced JSON block, nothing after it:
+Your final message is the only thing the orchestrator receives, and a final message without the JSON block
+is unusable even if the prose above it is complete. End it with exactly one fenced JSON block, nothing after it:
 
 ```json
 {"pr": 34, "round": 2, "tests": "passed|failed", "test_summary": "17 passed",

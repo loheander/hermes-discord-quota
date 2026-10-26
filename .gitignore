@@ -10,3 +10,4 @@ htmlcov/
 .env
 .venv
 .claude/runs/
+.claude/settings.local.json
