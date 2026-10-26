@@ -30,8 +30,6 @@ Repo: `/home/lo/repo/hermes-discord-quota`, base branch `main`.
 ## Phase 2: loop, one issue at a time, lowest open `story` number first
 
 For issue N (skip closed ones; start at `--from` if given, else at an issue labelled `ongoing` if one exists). Run the usage check below before each new issue.
-On start or resume, read `.claude/runs/HANDOFF.md` and `.claude/runs/carryover.md` if present: they replace the
-conversation history of earlier stories. Pass the carryover notes relevant to issue N into the implementer prompt.
 
 1. **Implement**: follow `/implement-issue N` (marks it `ongoing`, spawns the implementer, keeps its agent id).
 2. **Review**: follow `/review-issue N` (reviewer agent + Jev triage; yields the open comment list).
@@ -50,24 +48,7 @@ conversation history of earlier stories. Pass the carryover notes relevant to is
    - Not ready: back to step 2 (review + fix again).
 5. **Merge.** `gh pr merge <pr> --squash --delete-branch`, then `git checkout main && git pull --ff-only`,
    `gh issue edit N --remove-label ongoing` (the PR's `Closes #N` closes the issue; close it explicitly if not).
-   Then do the context reset below instead of starting the next issue in the same context.
-
-## Context reset after each merge
-
-The orchestrator's context grows with every PR, so each story starts in a cleared context. After a successful
-merge (and after updating later issue bodies and `carryover.md` with anything learned):
-
-1. Write `.claude/runs/HANDOFF.md` (overwrite): the time, the last merged issue and PR, the next issue number,
-   merged/remaining counts, open decisions, and anything the next story needs that is not already in the issue
-   body or `carryover.md`. Everything needed to continue must be on disk (GitHub issues, labels, `.claude/runs/`).
-2. Run the usage check. If it pauses, stop there (the `PAUSED` flow below).
-3. Otherwise do not start the next issue. Tell the user in one line: merged #N, next is #M, run `/clear` and then
-   `/orchestrate-plan` to continue. End the turn. The agent cannot clear its own context; the user runs `/clear`.
-4. In the fresh context, `/orchestrate-plan` resumes from the lowest open `story` issue, reading `HANDOFF.md`
-   and `carryover.md` first.
-
-Mid-story (between implement, review and fix rounds) keep the context: the implementer is resumed by agent id,
-which a cleared context still has in `.claude/runs/issue-<N>/agent_id`, but finishing the story first is simpler.
+   Proceed to the next issue.
 
 ## Usage check between stories
 
