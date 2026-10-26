@@ -21,11 +21,12 @@ import logging
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,22 @@ class Transaction:
     output_tokens: int
 
 
+@contextmanager
+def _transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """BEGIN IMMEDIATE ... COMMIT; on any failure roll back and re-raise the original error."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                logger.debug("discord_quota: rollback failed", exc_info=True)
+        raise
+
+
 class Ledger:
     def __init__(self, path: str | Path | None = None) -> None:
         self._path = Path(path) if path is not None else None
@@ -122,14 +139,9 @@ class Ledger:
         with self._lock:
             conn = self._connect()
             try:
-                conn.execute("BEGIN IMMEDIATE")
-                try:
+                with _transaction(conn):
                     cur = conn.execute(sql, params)
                     result = cur.lastrowid if sql.lstrip().upper().startswith("INSERT") else cur.rowcount
-                    conn.execute("COMMIT")
-                except BaseException:
-                    conn.execute("ROLLBACK")
-                    raise
                 return result
             finally:
                 conn.close()
@@ -219,8 +231,7 @@ class Ledger:
         with self._lock:
             conn = self._connect()
             try:
-                conn.execute("BEGIN IMMEDIATE")
-                try:
+                with _transaction(conn):
                     micros = int(conn.execute(sql, params).fetchone()[0])
                     if micros > 0:
                         conn.execute(
@@ -228,10 +239,6 @@ class Ledger:
                             " cost_usd, model, provider, source_kind)"
                             " VALUES (?, 'admin', ?, ?, 'admin', 'admin', 'admin_reset')",
                             (str(user_id), ts, -micros / 1_000_000))
-                    conn.execute("COMMIT")
-                except BaseException:
-                    conn.execute("ROLLBACK")
-                    raise
             finally:
                 conn.close()
         return Decimal(max(micros, 0)) / _MICRO

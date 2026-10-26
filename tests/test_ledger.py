@@ -1,5 +1,7 @@
 import sqlite3
 import threading
+
+import pytest
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -124,22 +126,67 @@ def test_reset_window_nothing_to_credit(tmp_path):
     assert l.recent("u1") == []
 
 
-def test_reset_window_race_with_record(tmp_path):
+def test_reset_window_atomic_against_other_process_writer(tmp_path):
+    import os, subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    db = tmp_path / "q.db"
+    n = 300
+    code = ("import sys\nsys.path.insert(0, %r)\n" % str(root) +
+            "from discord_quota.ledger import Ledger\nl=Ledger(sys.argv[1])\n"
+            "for _ in range(%d): l.record('u1','s','0.01','m','p',timestamp=100)" % n)
+    l = Ledger(db)
+    rec(l, 0, 100)
+    p = subprocess.Popen([sys.executable, "-I", "-c", code, str(db)], cwd=root)
+    credits = Decimal(0)
+    for _ in range(100000):  # bounded; ends when the writer exits
+        credits += l.reset_window("u1", 0, timestamp=100)
+        if p.poll() is not None:
+            break
+    assert p.wait(timeout=30) == 0
+    credits += l.reset_window("u1", 0, timestamp=100)
+    assert l.spend_since("u1", 0) == Decimal(0)
+    # Conservation: everything recorded was credited back.
+    assert credits == Decimal("0.01") * n
+    # Atomicity: each credit row zeroes the running sum of all rows inserted before it,
+    # which fails if a record() could slip in between the sum and the credit insert.
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT id, source_kind, CAST(ROUND(cost_usd*1000000) AS INTEGER)"
+                        " FROM quota_transactions ORDER BY id").fetchall()
+    running = 0
+    for _id, kind, micros in rows:
+        running += micros
+        if kind == "admin_reset":
+            assert running == 0, f"credit row {_id} left residual {running}"
+
+
+def test_transaction_propagates_original_error(tmp_path):
+    from discord_quota.ledger import _transaction
     l = mk(tmp_path)
-    stop = threading.Event()
+    conn = l._connect()
 
-    def writer():
-        while not stop.is_set():
-            rec(l, "0.01", 100)
+    class Err(Exception):
+        pass
 
-    t = threading.Thread(target=writer)
-    t.start()
-    for _ in range(20):
-        l.reset_window("u1", 0, timestamp=100)
-    stop.set()
-    t.join()
-    l.reset_window("u1", 0, timestamp=100)
-    assert l.spend_since("u1", 0) == Decimal("0")
+    with pytest.raises(Err):
+        with _transaction(conn):
+            conn.execute("COMMIT")  # transaction already gone; rollback must not mask Err
+            raise Err()
+    assert not conn.in_transaction
+
+    class FailCommit:
+        in_transaction = True
+
+        def execute(self, sql, *a):
+            if sql == "COMMIT":
+                raise sqlite3.OperationalError("commit boom")
+            if sql == "ROLLBACK":
+                raise sqlite3.OperationalError("cannot rollback")
+
+    with pytest.raises(sqlite3.OperationalError, match="commit boom"):
+        with _transaction(FailCommit()):
+            pass
+    conn.close()
 
 
 def test_invalid_cost_recorded_as_zero(tmp_path, caplog):
@@ -163,10 +210,8 @@ def test_connect_failure_closes_connection(tmp_path, monkeypatch):
             closed.append(1)
 
     monkeypatch.setattr(sqlite3, "connect", lambda *a, **k: Boom())
-    try:
+    with pytest.raises(sqlite3.OperationalError):
         l.spend_since("u1", 0)
-    except sqlite3.OperationalError:
-        pass
     assert closed == [1]
 
 
