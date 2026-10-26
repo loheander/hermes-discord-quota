@@ -66,3 +66,36 @@ def test_utc_and_naive_inputs_converted():
     early = datetime(2026, 7, 1, 9, 30, tzinfo=timezone.utc)  # 11:30 CEST
     assert daily_window(early, STO)[0] == L(2026, 6, 30, 12)
     assert weekly_window(utc, STO)[0].tzinfo is STO
+
+
+def _utc(*a):
+    return datetime(*a, tzinfo=timezone.utc)
+
+
+def _instants(w):
+    return tuple(d.astimezone(timezone.utc) for d in w)
+
+
+def test_now_on_spring_transition_day_instants():
+    now = _utc(2026, 3, 29, 3, 0)  # 05:00 CEST, after the 02:00->03:00 jump
+    assert _instants(daily_window(now, STO)) == (_utc(2026, 3, 28, 11), _utc(2026, 3, 29, 10))
+    assert daily_window(now, STO)[0].timestamp() == _utc(2026, 3, 28, 11).timestamp()
+
+
+@pytest.mark.parametrize("now", [_utc(2026, 10, 24, 23, 30), _utc(2026, 10, 25, 2, 30)])
+def test_now_on_autumn_transition_day_instants(now):
+    # 01:30 CEST and 03:30 CET local
+    assert _instants(daily_window(now, STO)) == (_utc(2026, 10, 24, 10), _utc(2026, 10, 25, 11))
+
+
+def test_now_in_repeated_hour_both_folds():
+    # 02:30 local occurs twice on 2026-10-25 (00:30Z CEST, 01:30Z CET)
+    for now in (_utc(2026, 10, 25, 0, 30), _utc(2026, 10, 25, 1, 30)):
+        assert _instants(daily_window(now, STO)) == (_utc(2026, 10, 24, 10), _utc(2026, 10, 25, 11))
+
+
+def test_weekly_after_transition_before_next_friday_instants():
+    # Sun 2026-03-29 05:00 CEST
+    assert _instants(weekly_window(_utc(2026, 3, 29, 3), STO)) == (_utc(2026, 3, 27, 11), _utc(2026, 4, 3, 10))
+    # Sun 2026-10-25 03:30 CET
+    assert _instants(weekly_window(_utc(2026, 10, 25, 2, 30), STO)) == (_utc(2026, 10, 23, 10), _utc(2026, 10, 30, 11))
