@@ -20,14 +20,14 @@ FOOTER_RULE = "─" * 40
 
 BLOCKED_REPLY = (
     "🚫 Ingen åtkomst\n\n"
-    "Du har inga pengar att använda den här boten med.\n"
+    "Du har ingen budget för den här boten.\n"
     "Fråga den som driver boten om du kan få använda den."
 )
 
 UNAVAILABLE_REPLY = "Kan inte kolla hur mycket pengar du har kvar, försök senare."
 
 CONCURRENT_REPLY = (
-    "Du har en fråga som fortfarande pågår och du har lite pengar kvar "
+    "Du har en fråga som fortfarande pågår och din återstående budget är låg "
     "({remaining}). Vänta tills den är klar och försök igen."
 )
 
@@ -125,13 +125,13 @@ def quota_exceeded_reply(status: QuotaStatus, now: datetime, zone: str) -> str:
         return BLOCKED_REPLY
     names = [_per(w) for w in status.blocking]
     if not names:  # admitted or disabled: never raise inside hooks
-        return "⚠️ Pengarna är slut\n\nSkriv /quota för att se hur mycket du har kvar."
-    head = f"Du har använt upp dina pengar {' och '.join(names)}:"
+        return "⚠️ Budgeten är slut\n\nSkriv /quota för att se hur mycket du har kvar."
+    head = f"Du har använt upp din budget {' och '.join(names)}:"
     lines = []
     for w in status.windows:
         lines.append(f"• {_per(w).capitalize()}: {_spend(w)} — återställs {reset_phrase(w.resets_at, now, zone)}")
     return (
-        "⚠️ Pengarna är slut\n\n"
+        "⚠️ Budgeten är slut\n\n"
         f"{head}\n" + "\n".join(lines) + "\n\n"
         "Du kan inte skriva till boten förrän det återställs. Skriv /quota för att se hur mycket du har kvar."
     )
@@ -154,14 +154,14 @@ def _quota_line(w: WindowStatus, now: datetime, zone: str) -> str:
     if w.state is WindowState.UNLIMITED:
         return f"ingen gräns ({usd(w.spent)} använt — återställs {resets})"
     if w.state is WindowState.BLOCKED:
-        return f"inga pengar, ingen åtkomst ({usd(w.spent)} använt — återställs {resets})"
+        return f"ingen budget, ingen åtkomst ({usd(w.spent)} använt — återställs {resets})"
     return f"{usd(w.remaining)} kvar av {usd(w.limit)} ({pct(w)} använt — återställs {resets})"
 
 
 def quota_status_text(status: QuotaStatus, now: datetime, zone: str) -> str:
     """PLAN.md 7.3."""
     return (
-        "📊 Dina pengar kvar\n\n"
+        "📊 Din budget\n\n"
         f"• Per dag: {_quota_line(status.daily, now, zone)}\n"
         f"• Per vecka: {_quota_line(status.weekly, now, zone)}\n"
         f"• Läge: {_status_label(status)}"
@@ -177,7 +177,7 @@ def warning_footer(status: QuotaStatus, now: datetime, zone: str) -> str | None:
         until = max(w.resets_at for w in ex)
         w = max(ex, key=lambda x: (x.percent or 0))
         return (
-            f"{FOOTER_RULE}\n⚠️ Pengarna är slut: du har använt {usd(w.spent)} av "
+            f"{FOOTER_RULE}\n⚠️ Budgeten är slut: du har använt {usd(w.spent)} av "
             f"{usd(w.limit)} {_per(w)} ({pct(w)}). Du kan skriva igen "
             f"{reset_phrase(until, now, zone)}."
         )
@@ -186,7 +186,7 @@ def warning_footer(status: QuotaStatus, now: datetime, zone: str) -> str | None:
         return None
     w = max(warned, key=lambda x: (x.percent or 0))
     return (
-        f"{FOOTER_RULE}\n⚠️ Snart slut: du har använt {pct(w)} av dina pengar "
+        f"{FOOTER_RULE}\n⚠️ Budgetvarning: Du har använt {pct(w)} av din budget "
         f"{_per(w)} ({usd(w.spent)} av {usd(w.limit)}). "
         f"Återställs {_reset_short(w, now, zone)}."
     )
