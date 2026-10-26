@@ -38,7 +38,11 @@ You work on exactly one issue at a time.
 
 ## Final report (both modes)
 
-End with exactly one fenced JSON block, nothing after it:
+Write the report JSON to `/home/lo/repo/hermes-discord-quota/.claude/runs/issue-<N>/implement.json` (mode A)
+or `fix-<K>.json` (mode B, `K` = the review round given in the prompt), creating the directory if needed.
+Your final message is read by an orchestrator whose context grows with every story: at most 5 lines of prose
+(deviations from PLAN.md or the issue, decisions the orchestrator must know), then exactly one fenced JSON block,
+nothing after it. Do not repeat what the code or PR body already says.
 
 ```json
 {"issue": 12, "branch": "issue-12-ledger", "pr": 34, "tests": "passed|failed", "test_summary": "17 passed",
