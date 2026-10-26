@@ -237,6 +237,17 @@ def _read_raw(config_path: Path | str | None) -> Any:
     return (load_config() or {}).get("discord_quota")
 
 
+def provider_is_free(config_getter: Any, provider: Any) -> bool:
+    """Shared free-provider check; fails to paid on a missing getter or any error."""
+    if config_getter is None:
+        return False
+    try:
+        return bool(config_getter().is_free_provider(provider))
+    except Exception:
+        logger.warning("discord_quota: free_providers lookup failed", exc_info=True)
+        return False
+
+
 def load_config(config_path: Path | str | None = None) -> QuotaConfig:
     """Load config via Hermes' loader, or from ``config_path`` when injected."""
     try:

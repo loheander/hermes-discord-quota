@@ -30,6 +30,8 @@ from typing import Any, Callable
 
 from .ledger import round_cost
 
+from .config import provider_is_free
+
 logger = logging.getLogger("hermes_discord_quota")
 
 _USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_tokens",
@@ -113,14 +115,7 @@ class SpendRecorder:
         return value if value.is_finite() else None
 
     def _is_free(self, provider: Any) -> bool:
-        """Free-provider check against the current (TTL-cached) config; fails to paid."""
-        if self._config_getter is None:
-            return False
-        try:
-            return bool(self._config_getter().is_free_provider(provider))
-        except Exception:
-            logger.warning("discord_quota: free_providers lookup failed", exc_info=True)
-            return False
+        return provider_is_free(self._config_getter, provider)
 
     def _moa_cost(self, refs: Any) -> Decimal:
         total = Decimal(0)

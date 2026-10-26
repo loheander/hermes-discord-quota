@@ -28,6 +28,8 @@ from typing import Any, Callable
 
 from .ledger import round_cost
 
+from .config import provider_is_free
+
 logger = logging.getLogger("hermes_discord_quota")
 
 
@@ -70,13 +72,7 @@ class SubagentAccountant:
         self._lock = threading.Lock()
 
     def _is_free(self, provider: Any) -> bool:
-        if self._config_getter is None:
-            return False
-        try:
-            return bool(self._config_getter().is_free_provider(provider))
-        except Exception:
-            logger.warning("discord_quota: free_providers lookup failed", exc_info=True)
-            return False
+        return provider_is_free(self._config_getter, provider)
 
     def subagent_stop(self, **kw: Any) -> None:
         try:
