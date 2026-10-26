@@ -69,7 +69,7 @@ def test_exceeded_reply_snapshot():
     now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)  # 09:00 local, before noon
     s = st(1.0, 5.0, "1.04", "3.18", now)
     assert quota_exceeded_reply(s, now, Z) == (
-        "⚠️ Budgeten är slut\n\n"
+        "⚠️ Pengarna är slut\n\n"
         "Du har använt upp din budget per dag:\n"
         "• Per dag: 10,40 kr av 10,00 kr (104%) — återställs idag kl. 12:00\n"
         "• Per vecka: 31,80 kr av 50,00 kr (64%) — återställs fredag kl. 12:00\n\n"
@@ -113,7 +113,7 @@ def test_footers():
         f"{RULE}\n⚠️ Budgetvarning: Du har använt 92% av din budget per dag (9,20 kr av 10,00 kr). "
         "Återställs kl. 12:00.")
     assert warning_footer(st(1.0, 5.0, "1.04", "1", now), now, Z) == (
-        f"{RULE}\n⚠️ Budgeten är slut: du har använt 10,40 kr av 10,00 kr per dag (104%). "
+        f"{RULE}\n⚠️ Pengarna är slut: du har använt 10,40 kr av 10,00 kr per dag (104%). "
         "Du kan skriva igen idag kl. 12:00.")
     assert warning_footer(st(1.0, 5.0, "0.1", "1", now), now, Z) is None
     assert warning_footer(st(1.0, 5.0, "0.1", "4.6", now), now, Z).endswith(
@@ -148,9 +148,9 @@ def test_budget_wording_and_no_kvot_anywhere():
     generic = quota_exceeded_reply(st(1.0, 5.0, "0.1", "0.1", now), now, Z)
     exhausted_footer = warning_footer(st(1.0, 5.0, "1.04", "1", now), now, Z)
     warn_footer = warning_footer(st(1.0, 5.0, "0.92", "1", now), now, Z)
-    assert exceeded.startswith("⚠️ Budgeten är slut")
-    assert generic.startswith("⚠️ Budgeten är slut")
-    assert exhausted_footer.split("\n", 1)[1].startswith("⚠️ Budgeten är slut")
+    assert exceeded.startswith("⚠️ Pengarna är slut")
+    assert generic.startswith("⚠️ Pengarna är slut")
+    assert exhausted_footer.split("\n", 1)[1].startswith("⚠️ Pengarna är slut")
     assert warn_footer.split("\n", 1)[1].startswith("⚠️ Budgetvarning: Du har använt")
     assert "din återstående budget är låg" in concurrent_reply(Decimal("0.05"))
     texts = [

@@ -42,7 +42,7 @@ def test_warning_at_90():
 
 def test_exhausted_at_100():
     out = run(make("1.04"))
-    assert "Budgeten är slut" in out and out.startswith("Hello\n\n")
+    assert "Pengarna är slut" in out and out.startswith("Hello\n\n")
 
 
 def test_empty_and_non_discord_untouched():

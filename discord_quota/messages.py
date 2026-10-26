@@ -125,13 +125,13 @@ def quota_exceeded_reply(status: QuotaStatus, now: datetime, zone: str) -> str:
         return BLOCKED_REPLY
     names = [_per(w) for w in status.blocking]
     if not names:  # admitted or disabled: never raise inside hooks
-        return "⚠️ Budgeten är slut\n\nSkriv /quota för att se hur mycket du har kvar."
+        return "⚠️ Pengarna är slut\n\nSkriv /quota för att se hur mycket du har kvar."
     head = f"Du har använt upp din budget {' och '.join(names)}:"
     lines = []
     for w in status.windows:
         lines.append(f"• {_per(w).capitalize()}: {_spend(w)} — återställs {reset_phrase(w.resets_at, now, zone)}")
     return (
-        "⚠️ Budgeten är slut\n\n"
+        "⚠️ Pengarna är slut\n\n"
         f"{head}\n" + "\n".join(lines) + "\n\n"
         "Du kan inte skriva till boten förrän det återställs. Skriv /quota för att se hur mycket du har kvar."
     )
@@ -177,7 +177,7 @@ def warning_footer(status: QuotaStatus, now: datetime, zone: str) -> str | None:
         until = max(w.resets_at for w in ex)
         w = max(ex, key=lambda x: (x.percent or 0))
         return (
-            f"{FOOTER_RULE}\n⚠️ Budgeten är slut: du har använt {usd(w.spent)} av "
+            f"{FOOTER_RULE}\n⚠️ Pengarna är slut: du har använt {usd(w.spent)} av "
             f"{usd(w.limit)} {_per(w)} ({pct(w)}). Du kan skriva igen "
             f"{reset_phrase(until, now, zone)}."
         )

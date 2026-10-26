@@ -86,7 +86,7 @@ def test_exceeded_skips_and_sends_with_thread():
     assert len(ad.sent) == 1
     chat, text, meta = ad.sent[0]
     assert chat == "123" and meta == {"thread_id": "999"}
-    assert "Budgeten är slut" in text
+    assert "Pengarna är slut" in text
 
 
 def test_blocked_text():
