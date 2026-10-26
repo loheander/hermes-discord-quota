@@ -349,3 +349,84 @@ def test_thread_safe_exactly_one_admitted():
     [t.start() for t in ts]
     [t.join() for t in ts]
     assert sum(r is None for r in results) == 1
+
+
+def _admit(gate, gw, chat, user="42"):
+    return gate.pre_gateway_dispatch(event=Event(source=src(chat_id=chat, user_id=user)),
+                                     gateway=gw, session_store=KeyedStore())
+
+
+def test_attach_by_session_key_not_oldest_marker():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    _admit(gate, gw, "111")
+    _admit(gate, gw, "222")
+    key_b = "agent:main:discord:group:222"
+    gate._context_session_key = lambda: key_b
+    gate.pre_llm_call(session_id="sB", turn_id="tB", platform="discord", sender_id="42")
+    gate.on_session_end(session_id="sB")
+    # channel 222 released, channel 111 still guarded
+    assert gate.inflight_count("42") == 1
+    assert list(gate._inflight["42"]) == ["agent:main:discord:group:111"]
+
+
+def test_attach_ambiguous_without_key_is_skipped():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    _admit(gate, gw, "111")
+    _admit(gate, gw, "222")
+    gate._context_session_key = lambda: ""
+    gate.pre_llm_call(session_id="sX", turn_id="t", platform="discord", sender_id="42")
+    gate.on_session_end(session_id="sX")
+    assert gate.inflight_count("42") == 2
+
+
+def test_attach_single_marker_without_key():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    _admit(gate, gw, "111")
+    gate._context_session_key = lambda: ""
+    gate.pre_llm_call(session_id="s1", turn_id="t", platform="discord", sender_id="42")
+    gate.on_session_end(session_id="s1")
+    assert gate.inflight_count("42") == 0
+
+
+def test_readmission_same_key_keeps_session_id():
+    clock = Clock()
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    gate._mono = clock
+    gate._context_session_key = lambda: "agent:main:discord:group:111"
+    _admit(gate, gw, "111")
+    gate.pre_llm_call(session_id="s1", turn_id="t", platform="discord", sender_id="42")
+    clock.t += 5
+    _admit(gate, gw, "111")  # queued second message, same session
+    marker = gate._inflight["42"]["agent:main:discord:group:111"]
+    assert marker[1] == "s1" and marker[0] == 1000.0
+    gate.on_session_end(session_id="s1")
+    assert gate.inflight_count("42") == 0
+
+
+def test_readmission_refreshes_unattached_timestamp():
+    clock = Clock()
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    gate._mono = clock
+    _admit(gate, gw, "111")
+    clock.t += 5
+    _admit(gate, gw, "111")
+    assert gate._inflight["42"]["agent:main:discord:group:111"][0] == 1005.0
+
+
+def test_thread_safe_interleaved_attach_release():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    for i in range(8):
+        _admit(gate, gw, str(i))
+    errors = []
+
+    def run(i):
+        try:
+            gate._attach_session("42", f"s{i}", f"agent:main:discord:group:{i}")
+            gate.on_session_end(session_id=f"s{i}")
+        except Exception as exc:  # pragma: no cover
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert not errors and gate.inflight_count("42") == 0

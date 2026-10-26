@@ -44,6 +44,14 @@ LOW_BALANCE_USD = Decimal("0.10")
 # A marker not yet visible in gateway._running_agents is trusted this long
 # (the agent is registered after pre_gateway_dispatch); without the gateway
 # map a marker expires after MARKER_MAX_AGE_SECONDS.
+#
+# Known limits: a marker is set for every admitted message, including ones that
+# never start an LLM turn (slash commands, messages Hermes later rejects). Such
+# markers get no session_id/on_session_end and linger for MARKER_GRACE_SECONDS,
+# so they can briefly reject a low-balance user's real turn in another channel.
+# Markers keyed by the ``chan:`` fallback (no session key available) are never
+# in ``_running_agents``, so they are trusted for MARKER_MAX_AGE_SECONDS and
+# otherwise cleared only by on_session_end.
 MARKER_GRACE_SECONDS = 30.0
 MARKER_MAX_AGE_SECONDS = 900.0
 SKIP = {"action": "skip", "reason": SKIP_REASON}
@@ -145,7 +153,7 @@ class AdmissionGate:
 
     def _alive(self, key: str, marker: list, running: Any, now: float) -> bool:
         age = now - marker[0]
-        if running is None:
+        if running is None or key.startswith("chan:"):
             return age < MARKER_MAX_AGE_SECONDS
         try:
             return age < MARKER_GRACE_SECONDS or key in running
@@ -169,7 +177,11 @@ class AdmissionGate:
                 reject = True
             else:
                 reject = False
-                mine[key] = [now, None]
+                cur = mine.get(key)
+                if cur is None:
+                    mine[key] = [now, None]
+                elif cur[1] is None:
+                    cur[0] = now  # same-key re-admission keeps a running turn's marker
             if not mine:
                 self._inflight.pop(user_id, None)
         if not reject:
@@ -181,14 +193,34 @@ class AdmissionGate:
         with self._lock:
             return len(self._inflight.get(str(user_id), {}))
 
-    def _attach_session(self, user_id: str, session_id: str) -> None:
+    @staticmethod
+    def _context_session_key() -> str:
+        """Gateway session key of the current turn (ContextVar), or ""."""
+        try:
+            from gateway import session_context as sc
+            value = sc._SESSION_KEY.get()
+            return "" if value is sc._UNSET else str(value or "").strip()
+        except Exception:
+            return ""
+
+    def _attach_session(self, user_id: str, session_id: str, session_key: str = "") -> None:
+        """Bind session_id to the marker of its own channel.
+
+        Without the session key, bind only when exactly one marker is unattached
+        (otherwise the owner is ambiguous and the marker ages out instead).
+        """
         with self._lock:
             mine = self._inflight.get(user_id, {})
             if any(m[1] == session_id for m in mine.values()):
                 return
+            if session_key:
+                marker = mine.get(session_key)
+                if marker is not None and marker[1] is None:
+                    marker[1] = session_id
+                return
             free = [m for m in mine.values() if m[1] is None]
-            if free:
-                min(free, key=lambda m: m[0])[1] = session_id
+            if len(free) == 1:
+                free[0][1] = session_id
 
     def _release_session(self, session_id: str) -> None:
         with self._lock:
@@ -263,7 +295,8 @@ class AdmissionGate:
             self._resolver.bind_turn(turn_id, platform, sender_id)
             if session_id and sender_id:
                 self._resolver.bind_session(platform, sender_id, session_id=session_id)
-                self._attach_session(str(sender_id).strip(), str(session_id))
+                self._attach_session(str(sender_id).strip(), str(session_id),
+                                     self._context_session_key())
         except Exception:
             logger.warning("discord_quota bind_turn failed", exc_info=True)
         return None
