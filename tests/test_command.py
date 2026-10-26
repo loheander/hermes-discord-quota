@@ -42,8 +42,8 @@ def test_status_for_invoker():
     c = make()
     assert c.observe_dispatch(event()) is None
     out = c.handle("")
-    assert "Kvotstatus för Discord" in out and "0,58 USD / 1,00 USD kvar" in out
-    assert "Status: Aktiv" in out
+    assert "Dina pengar kvar" in out and "5,80 kr kvar av 10,00 kr" in out
+    assert "Läge: Ok" in out
 
 
 def test_non_discord_explains():
@@ -59,26 +59,26 @@ def test_no_invoker_explains():
 def test_resolver_preferred():
     c = make()
     c._resolver = SimpleNamespace(resolve=lambda **k: "7")
-    assert "Kvotstatus för Discord" in c.handle("")
+    assert "Dina pengar kvar" in c.handle("")
 
 
 def test_exceeded_and_blocked_and_unlimited():
     c = make(spent="2")
     c.observe_dispatch(event())
-    assert "Status: Överskriden" in c.handle("")
+    assert "Läge: Slut" in c.handle("")
     c = make(limits=Limits(0.0, 5.0))
     c.observe_dispatch(event())
-    assert "Status: Blockerad" in c.handle("")
+    assert "Läge: Blockerad" in c.handle("")
     c = make(limits=Limits(-1.0, -1.0))
     c.observe_dispatch(event())
     out = c.handle("")
-    assert "obegränsad" in out and "Status: Aktiv" in out
+    assert "ingen gräns" in out and "Läge: Ok" in out
 
 
 def test_error_returns_unavailable():
     c = make(boom=True)
     c.observe_dispatch(event())
-    assert "tillfälligt otillgänglig" in c.handle("")
+    assert c.handle("") == "Kan inte kolla hur mycket pengar du har kvar, försök senare."
 
 
 def test_bot_clears_invoker():
@@ -89,5 +89,5 @@ def test_bot_clears_invoker():
 
 
 def test_swedish_constants():
-    assert DESCRIPTION == "Visa din återstående kostnadskvot på Discord"
-    assert NOT_DISCORD_REPLY == "/quota visar din kostnadskvot och fungerar bara när du skriver till boten på Discord."
+    assert DESCRIPTION == "Visa hur mycket pengar du har kvar på Discord"
+    assert NOT_DISCORD_REPLY == "/quota visar hur mycket pengar du har kvar och fungerar bara när du skriver till boten på Discord."

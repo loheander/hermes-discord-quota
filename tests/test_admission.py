@@ -86,19 +86,19 @@ def test_exceeded_skips_and_sends_with_thread():
     assert len(ad.sent) == 1
     chat, text, meta = ad.sent[0]
     assert chat == "123" and meta == {"thread_id": "999"}
-    assert "Kvoten är slut" in text
+    assert "Pengarna är slut" in text
 
 
 def test_blocked_text():
     gate, ad, gw, _ = make(daily=0, spent="0")
     assert call(gate, gw, Event())["action"] == "skip"
-    assert "Åtkomst blockerad" in ad.sent[0][1]
+    assert "Ingen åtkomst" in ad.sent[0][1]
 
 
 def test_blocked_and_other_exhausted_still_blocked_text():
     gate, ad, gw, _ = make(daily=0, weekly=1.0, spent="9")
     call(gate, gw, Event())
-    assert "Åtkomst blockerad" in ad.sent[0][1]
+    assert "Ingen åtkomst" in ad.sent[0][1]
 
 
 def test_bypass_commands_even_over_budget():
@@ -153,7 +153,7 @@ def test_ignored_events():
 def test_ledger_error_fails_closed_with_reply():
     gate, ad, gw, _ = make(ledger=FakeLedger(boom=True))
     assert call(gate, gw, Event()) == {"action": "skip", "reason": "discord_quota_unavailable"}
-    assert len(ad.sent) == 1 and "tillfälligt otillgänglig" in ad.sent[0][1]
+    assert len(ad.sent) == 1 and ad.sent[0][1] == "Kan inte kolla hur mycket pengar du har kvar, försök senare."
 
 
 def test_config_error_fails_closed_but_bypass_and_non_discord_pass():
@@ -261,7 +261,7 @@ def test_second_channel_rejected_when_low_balance():
     first, second = two_chan(gate, gw)
     assert first is None
     assert second["reason"] == CONCURRENT_REASON
-    assert len(ad.sent) == 1 and "0,05 USD" in ad.sent[0][1]
+    assert len(ad.sent) == 1 and "0,50 kr" in ad.sent[0][1]
 
 
 def test_second_channel_admitted_with_budget():

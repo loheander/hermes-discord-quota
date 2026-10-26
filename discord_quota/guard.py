@@ -31,9 +31,9 @@ from .status import evaluate
 logger = logging.getLogger("hermes_discord_quota")
 
 BLOCK_MESSAGE = (
-    "Kvoten tog slut mitt i turen: den dagliga eller veckovisa kostnadsgränsen i USD är nådd. "
-    "Sluta anropa verktyg och berätta för användaren på svenska att turen avbröts "
-    "eftersom kvoten är slut."
+    "Pengarna tog slut mitt i svaret: gränsen per dag eller per vecka är nådd. "
+    "Sluta anropa verktyg och berätta för användaren på svenska att svaret avbröts "
+    "eftersom pengarna är slut."
 )
 INTERRUPT_REASON = "quota exhausted"
 _MAX_TURNS = 256
