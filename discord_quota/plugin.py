@@ -47,3 +47,4 @@ def register(ctx: Any) -> None:
     ctx.register_hook("pre_gateway_dispatch", gate.pre_gateway_dispatch)
     ctx.register_hook("pre_llm_call", gate.pre_llm_call)
     ctx.register_hook("subagent_start", gate.subagent_start)
+    ctx.register_hook("on_session_end", gate.on_session_end)
