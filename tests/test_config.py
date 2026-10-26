@@ -97,3 +97,62 @@ def test_load_invalid_yaml_fails_closed(tmp_path):
     p.write_text("a: [unclosed\n")
     c = load_config(p)
     assert c.enabled and c.limits_for("1") == (0.0, 0.0)
+
+
+def test_load_non_mapping_top_level_fails_closed(tmp_path, caplog):
+    p = tmp_path / "c.yaml"
+    p.write_text("- a\n- b\n")
+    with caplog.at_level(logging.WARNING):
+        c = load_config(p)
+    assert c.enabled and c.limits_for("1") == (0.0, 0.0)
+    assert "not a mapping" in caplog.text
+
+
+def test_duplicate_user_ids_keep_stricter(caplog):
+    with caplog.at_level(logging.WARNING):
+        c = parse_config({"users": {
+            123: {"daily_usd": -1, "weekly_usd": 5},
+            "123": {"daily_usd": 2, "weekly_usd": 0}}})
+    assert c.limits_for("123") == (2.0, 0.0)
+    assert "duplicate" in caplog.text
+    c = parse_config({"users": {"9": {"daily_usd": 1, "weekly_usd": 1},
+                                9: {"daily_usd": 3, "weekly_usd": -1}}})
+    assert c.limits_for(9) == (1.0, 1.0)
+
+
+def _fake_hermes(monkeypatch, load):
+    import sys
+    import types
+    mod = types.ModuleType("hermes_cli.config")
+    mod.load_config = load
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", mod)
+
+
+def test_hermes_loader_parsed(monkeypatch):
+    _fake_hermes(monkeypatch, lambda: {"discord_quota": {
+        "default": {"daily_usd": 1, "weekly_usd": 2}}})
+    c = load_config()
+    assert c.enabled and c.limits_for("1") == (1.0, 2.0)
+
+
+@pytest.mark.parametrize("ret", [{}, None])
+def test_hermes_loader_empty_disabled(monkeypatch, ret):
+    _fake_hermes(monkeypatch, lambda: ret)
+    assert not load_config().enabled
+
+
+def test_hermes_loader_raises_fails_closed(monkeypatch):
+    def boom():
+        raise RuntimeError("x")
+    _fake_hermes(monkeypatch, boom)
+    c = load_config()
+    assert c.enabled and c.limits_for("1") == (0.0, 0.0)
+
+
+def test_hermes_import_error_fails_closed(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "hermes_cli", None)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", None)
+    c = load_config()
+    assert c.enabled and c.limits_for("1") == (0.0, 0.0)

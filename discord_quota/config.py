@@ -148,6 +148,16 @@ def _enabled(raw: Any) -> bool:
     return True
 
 
+def _strict_key(v: float) -> float:
+    return math.inf if v < 0 else v
+
+
+def _stricter(a: Limits, b: Limits) -> Limits:
+    """Per window: blocked beats active (lower wins) beats unlimited."""
+    pick = lambda x, y: x if _strict_key(x) <= _strict_key(y) else y
+    return Limits(pick(a.daily_usd, b.daily_usd), pick(a.weekly_usd, b.weekly_usd))
+
+
 def parse_config(section: Any) -> QuotaConfig:
     """Build a QuotaConfig from the raw ``discord_quota`` section."""
     if section is None:
@@ -165,7 +175,13 @@ def parse_config(section: Any) -> QuotaConfig:
         logger.warning("discord_quota: users must be a mapping, got %r; ignored", raw_users)
         raw_users = None
     for uid, raw in (raw_users or {}).items():
-        users[str(uid)] = _limits(raw, f"users.{uid}")
+        new = _limits(raw, f"users.{uid}")
+        key = str(uid)
+        if key in users:
+            new = _stricter(users[key], new)
+            logger.warning("discord_quota: duplicate user id %r in users; "
+                           "keeping the stricter limits", key)
+        users[key] = new
 
     return QuotaConfig(
         enabled=True,
@@ -186,7 +202,11 @@ def _read_raw(config_path: Path | str | None) -> Any:
         except Exception as exc:
             logger.warning("discord_quota: cannot read %s (%s); failing closed", config_path, exc)
             return {"enabled": True}
-        return data.get("discord_quota") if isinstance(data, Mapping) else None
+        if not isinstance(data, Mapping):
+            logger.warning("discord_quota: %s top level is not a mapping; failing closed",
+                           config_path)
+            return {"enabled": True}
+        return data.get("discord_quota")
     from hermes_cli.config import load_config  # lazy: only inside Hermes
     return (load_config() or {}).get("discord_quota")
 
