@@ -1,8 +1,11 @@
 name: hermes-discord-quota
 version: 0.1.0
 kind: general
-description: "Discord user spending quota plugin with daily/weekly limits, carry-over deficit accounting, and instant canned rejections."
+description: "Discord user spending quota plugin with daily/weekly limits, 90% warning footers, mid-turn hard stops, and instant canned rejections."
 author: "Lo Gullstrand Heander"
 hooks:
   - pre_gateway_dispatch
   - post_api_request
+  - subagent_stop
+  - pre_tool_call
+  - transform_llm_output
