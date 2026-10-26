@@ -71,7 +71,7 @@ def test_exceeded_reply_snapshot():
     assert quota_exceeded_reply(s, now, Z) == (
         "⚠️ Pengarna är slut\n\n"
         "Du har använt upp din budget per dag:\n"
-        "• Per dag: 10,40 kr av 10,00 kr (104%) — återställs idag kl. 12:00\n"
+        "• Per dag: 10,40 kr av 10,00 kr (100%) — återställs idag kl. 12:00\n"
         "• Per vecka: 31,80 kr av 50,00 kr (64%) — återställs fredag kl. 12:00\n\n"
         "Du kan inte skriva till boten förrän det återställs. Skriv /quota för att se hur mycket du har kvar.")
 
@@ -113,7 +113,7 @@ def test_footers():
         f"{RULE}\n⚠️ Budgetvarning: Du har använt 92% av din budget per dag (9,20 kr av 10,00 kr). "
         "Återställs kl. 12:00.")
     assert warning_footer(st(1.0, 5.0, "1.04", "1", now), now, Z) == (
-        f"{RULE}\n⚠️ Pengarna är slut: du har använt 10,40 kr av 10,00 kr per dag (104%). "
+        f"{RULE}\n⚠️ Pengarna är slut: du har använt 10,40 kr av 10,00 kr per dag (100%). "
         "Du kan skriva igen idag kl. 12:00.")
     assert warning_footer(st(1.0, 5.0, "0.1", "1", now), now, Z) is None
     assert warning_footer(st(1.0, 5.0, "0.1", "4.6", now), now, Z).endswith(
@@ -161,3 +161,25 @@ def test_budget_wording_and_no_kvot_anywhere():
     ]
     for t in texts:
         assert "kvot" not in t.lower(), t
+
+
+def test_percent_never_above_100():
+    now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
+    for spent, kr, shown, raw in (("0.30", "3,00", "100%", None), ("0.31", "3,10", "100%", "103%"),
+                                  ("0.75", "7,50", "100%", "250%")):
+        s = st(0.30, 5.0, spent, "1", now)
+        footer = warning_footer(s, now, Z)
+        status = quota_status_text(s, now, Z)
+        assert f"{kr} kr av 3,00 kr per dag ({shown})" in footer
+        assert f"({shown} använt" in status
+        assert "0,00 kr kvar av 3,00 kr" in status
+        if raw:
+            assert raw not in footer and raw not in status
+    # amounts keep the real spend
+    assert "3,10 kr av 3,00 kr per dag (100%)" in warning_footer(st(0.30, 50.0, "0.31", "1", now), now, Z)
+
+
+def test_percent_under_limit_still_capped_at_99():
+    now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
+    s = st(1.0, 50.0, "0.996", "1", now)
+    assert "99%" in warning_footer(s, now, Z)
