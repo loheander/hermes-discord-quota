@@ -3,7 +3,7 @@ version: 0.1.0
 kind: general
 description: "Discord user spending quota plugin with daily/weekly limits, 90% warning footers, mid-turn hard stops, and instant canned rejections."
 author: "Lo Gullstrand Heander"
-hooks:
+provides_hooks:
   - pre_gateway_dispatch
   - pre_llm_call
   - subagent_start
