@@ -238,6 +238,9 @@ Instead of querying `SessionDB` on every hook call, resolve the Discord `user_id
        - Mark `turn_id` / `user_id` as exhausted in memory.
        - If the response contains pending tool calls (`assistant_tool_call_count > 0`), trigger a hard interrupt on the running agent via `gateway._running_agents` (`request_hard_interrupt`) and let `pre_tool_call` block any tools about to dispatch.
 
+### 6.3.1 `post_tool_call` (Media Generation Spend)
+`image_generate` and `video_generate` bill outside `post_api_request`, so `post_tool_call` (kwargs `tool_name`, `args`, `result`, `session_id`, `turn_id`, verified in `model_tools._emit_post_tool_call_hook`) charges them. The JSON result's provider-reported cost is read from `cost_usd` or `cost`, top level or under `extra` (OpenRouter image plugin: `extra["cost_usd"]`; video plugin: `extra["cost"]`; Hermes merges `extra` into the top level). A row with `source_kind='media'`, the result's `model`/`provider`, cost rounded to 6 places is written for the user from `UserResolver.resolve()`. `free_providers` records $0; `success: false`/`error` results record nothing; a success without a cost records $0 and logs one `Unpriced media usage` warning. The recorder then calls the same `after_record` mid-turn check as API spend. The hook never raises. Media rows are ignored by the subagent dedupe (`has_session(..., exclude_media=True)`) so they do not suppress 6.4.
+
 ### 6.4 `subagent_stop` (Delegated Subagent Spend)
 - **Location**: Fires in the parent agent thread when `delegate_task` finishes a child run.
 - **Logic**:

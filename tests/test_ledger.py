@@ -268,3 +268,12 @@ def test_delete_window_with_end_leaves_others(tmp_path):
     assert l.delete_window("u1", 100, 200) == 1
     assert l.spend_since("u1", 0) == Decimal("2")
     assert l.spend_since("o", 0) == Decimal("3")
+
+
+def test_has_session_exclude_media(tmp_path):
+    led = Ledger(tmp_path / "l.db")
+    led.record("1", "child", 0.1, "m", "p", source_kind="media")
+    assert led.has_session("child")
+    assert not led.has_session("child", exclude_media=True)
+    led.record("1", "child", 0.1, "m", "p")
+    assert led.has_session("child", exclude_media=True)

@@ -180,13 +180,16 @@ class Ledger:
             conn.close()
         return (Decimal(int(micros)) / _MICRO).quantize(_QUANT)
 
-    def has_session(self, session_id: str, source_kind: str | None = None) -> bool:
+    def has_session(self, session_id: str, source_kind: str | None = None,
+                    exclude_media: bool = False) -> bool:
         """True if any row exists for ``session_id`` (optionally of one source_kind)."""
         sql = "SELECT 1 FROM quota_transactions WHERE session_id = ?"
         params: tuple = (session_id,)
         if source_kind is not None:
             sql += " AND source_kind = ?"
             params += (source_kind,)
+        elif exclude_media:
+            sql += " AND source_kind != 'media'"
         conn = self._connect()
         try:
             return conn.execute(sql + " LIMIT 1", params).fetchone() is not None

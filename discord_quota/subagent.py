@@ -89,7 +89,7 @@ class SubagentAccountant:
         if not user:
             return
         with self._lock:
-            if self._ledger.has_session(child):
+            if self._ledger.has_session(child, exclude_media=True):
                 return
             cost, model, provider = self._lookup(child)
             if cost is None or Decimal(str(cost)) <= 0:

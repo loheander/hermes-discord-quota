@@ -38,6 +38,7 @@ def register(ctx: Any) -> None:
     from .footer import FooterHook
     from .guard import MidTurnGuard
     from .ledger import Ledger, default_db_path
+    from .media import MediaSpendRecorder
     from .recorder import SpendRecorder
     from .resolver import UserResolver
     from .subagent import SubagentAccountant
@@ -57,6 +58,7 @@ def register(ctx: Any) -> None:
     ctx.register_hook("subagent_start", gate.subagent_start)
     ctx.register_hook("on_session_end", gate.on_session_end)
     ctx.register_hook("post_api_request", recorder.post_api_request)
+    ctx.register_hook("post_tool_call", MediaSpendRecorder(ledger, resolver, after_record=guard.after_record, config_getter=getter).post_tool_call)
     ctx.register_hook("subagent_stop", SubagentAccountant(ledger, resolver, after_record=guard.after_record, config_getter=getter).subagent_stop)
     ctx.register_hook("pre_tool_call", guard.pre_tool_call)
     ctx.register_hook("transform_llm_output", FooterHook(getter, ledger, resolver).transform_llm_output)
