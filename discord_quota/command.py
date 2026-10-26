@@ -22,8 +22,8 @@ from .status import evaluate
 
 logger = logging.getLogger("hermes_discord_quota")
 
-DESCRIPTION = "View your remaining Discord spending quota"
-NOT_DISCORD_REPLY = "/quota shows your Discord spending quota and is only available when you message the bot on Discord."
+DESCRIPTION = "Visa din återstående kostnadskvot på Discord"
+NOT_DISCORD_REPLY = "/quota visar din kostnadskvot och fungerar bara när du skriver till boten på Discord."
 
 _invoker: contextvars.ContextVar[str] = contextvars.ContextVar("discord_quota_invoker", default="")
 
