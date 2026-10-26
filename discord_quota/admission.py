@@ -78,6 +78,7 @@ class AdmissionGate:
         self._resolver = resolver
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._pending: set[asyncio.Future] = set()
+        self.gateway: Any = None  # last gateway seen; the mid-turn guard finds agents through it
         self._last_warn = -WARN_INTERVAL_SECONDS
         self._mono = time.monotonic
         # user_id -> {session_key: [admitted_at, session_id]}; guarded by _lock
@@ -87,6 +88,8 @@ class AdmissionGate:
     # -- pre_gateway_dispatch -------------------------------------------
     def pre_gateway_dispatch(self, event: Any = None, gateway: Any = None,
                              session_store: Any = None, **_: Any) -> dict | None:
+        if gateway is not None:
+            self.gateway = gateway
         try:
             target = self._classify(event)
         except Exception:
