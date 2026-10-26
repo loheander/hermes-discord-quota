@@ -208,7 +208,7 @@ CREATE INDEX IF NOT EXISTS idx_trans_user_time ON quota_transactions(user_id, ti
              await adapter.send(
                  event.source.chat_id,
                  message,
-                 thread_id=getattr(event.source, "thread_id", None),
+                 metadata={"thread_id": getattr(event.source, "thread_id", None)},
              )
          except Exception:
              logger.warning("Failed to deliver quota rejection on Discord", exc_info=True)
