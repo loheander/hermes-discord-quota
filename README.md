@@ -11,6 +11,7 @@ Enforces configurable daily and weekly spending budgets (in USD) per Discord use
   - Weekly budget resetting at 12:00 Europe/Stockholm every Friday.
 - **USD Spending Limits**: Configured in `~/.hermes/config.yaml` with global defaults and per-user overrides.
 - **90% Deterministic Warning Footers**: Automatically appends a zero-LLM usage warning footer to responses when a user exceeds 90% of their daily or weekly limit.
+- **Media Charging**: `image_generate` and `video_generate` spend (provider-reported cost from the tool result, via `post_tool_call`) is charged to the Discord user's quota as `media` rows; free providers record $0 and results without a cost record $0 with a warning.
 - **Mid-Turn Hard Block**: Halts tool calls via `pre_tool_call` and interrupts the turn if a running turn exhausts the user's quota mid-execution.
 - **Special Quota Values**:
   - `negative` (e.g. `-1.0`): Unlimited quota (bypass limits).
