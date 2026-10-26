@@ -8,7 +8,7 @@ window below 100% never reads "100%". Unlimited windows show "unlimited".
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from .status import QuotaStatus, WindowState, WindowStatus
@@ -26,11 +26,20 @@ _CENT = Decimal("0.01")
 
 def usd(v: Decimal) -> str:
     q = Decimal(v).quantize(_CENT, rounding=ROUND_HALF_UP)
+    if q == 0:
+        q = abs(q)  # no "$-0.00"
     return f"-${-q}" if q < 0 else f"${q}"
 
 
-def pct(v: Decimal | None) -> str:
-    return f"{int((v or Decimal(0)).to_integral_value(rounding=ROUND_FLOOR))}%"
+def pct(w: WindowStatus) -> str:
+    """Half-up integer percent, capped at 99 unless the window is EXHAUSTED."""
+    n = int((w.percent or Decimal(0)).to_integral_value(rounding=ROUND_HALF_UP))
+    if w.state is not WindowState.EXHAUSTED:
+        n = min(n, 99)
+    return f"{n}%"
+
+
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
 def _local(dt: datetime, now: datetime, zone: str) -> tuple[datetime, datetime]:
@@ -52,9 +61,9 @@ def reset_phrase(resets_at: datetime, now: datetime, zone: str) -> str:
     elif days == 1:
         day = "Tomorrow"
     elif days >= 7:
-        day = f"Next {r:%A}"
+        day = f"Next {_WEEKDAYS[r.weekday()]}"
     else:
-        day = f"{r:%A}"
+        day = f"{_WEEKDAYS[r.weekday()]}"
     return f"{day} at {clock}"
 
 
@@ -67,7 +76,7 @@ def _spend(w: WindowStatus) -> str:
         return f"{usd(w.spent)} / unlimited"
     if w.state is WindowState.BLOCKED:
         return f"{usd(w.spent)} / {usd(w.limit)} (blocked)"
-    return f"{usd(w.spent)} / {usd(w.limit)} ({pct(w.percent)})"
+    return f"{usd(w.spent)} / {usd(w.limit)} ({pct(w)})"
 
 
 def is_blocked(status: QuotaStatus) -> bool:
@@ -80,10 +89,17 @@ def blocked_reply() -> str:
 
 
 def quota_exceeded_reply(status: QuotaStatus, now: datetime, zone: str) -> str:
-    """PLAN.md 7.1. Falls back to the blocked reply when a limit is 0."""
+    """PLAN.md 7.1.
+
+    If any window is blocked (limit 0) the 7.2 blocked reply takes precedence,
+    even when the other window is exhausted. With nothing blocking (admitted or
+    disabled status) a short generic reply is returned; this never raises.
+    """
     if is_blocked(status):
         return BLOCKED_REPLY
-    names = [_title(w) for w in status.blocking] or [_title(w) for w in status.windows if w.state is WindowState.EXHAUSTED]
+    names = [_title(w) for w in status.blocking]
+    if not names:  # admitted or disabled: never raise inside hooks
+        return "⚠️ Discord Quota Exceeded\n\nRun /quota to check your status."
     if len(names) == 1:
         head = f"Your {names[0]} spending limit has been reached:"
     else:
@@ -116,7 +132,7 @@ def _quota_line(w: WindowStatus, now: datetime, zone: str) -> str:
         return f"unlimited ({usd(w.spent)} spent — resets {resets})"
     if w.state is WindowState.BLOCKED:
         return f"none, access blocked ({usd(w.spent)} spent — resets {resets})"
-    return f"{usd(w.remaining)} / {usd(w.limit)} remaining ({pct(w.percent)} used — resets {resets})"
+    return f"{usd(w.remaining)} / {usd(w.limit)} remaining ({pct(w)} used — resets {resets})"
 
 
 def quota_status_text(status: QuotaStatus, now: datetime, zone: str) -> str:
@@ -139,7 +155,7 @@ def warning_footer(status: QuotaStatus, now: datetime, zone: str) -> str | None:
         w = max(ex, key=lambda x: (x.percent or 0))
         return (
             f"{FOOTER_RULE}\n⚠️ Quota Exhausted: {_title(w)} spend is "
-            f"{usd(w.spent)} / {usd(w.limit)} ({pct(w.percent)}). Further requests are "
+            f"{usd(w.spent)} / {usd(w.limit)} ({pct(w)}). Further requests are "
             f"paused until {reset_phrase(until, now, zone)}."
         )
     warned = [w for w in status.windows if w.warn]
@@ -147,7 +163,7 @@ def warning_footer(status: QuotaStatus, now: datetime, zone: str) -> str | None:
         return None
     w = max(warned, key=lambda x: (x.percent or 0))
     return (
-        f"{FOOTER_RULE}\n⚠️ Quota Warning: You have used {pct(w.percent)} of your "
+        f"{FOOTER_RULE}\n⚠️ Quota Warning: You have used {pct(w)} of your "
         f"{_title(w)} budget ({usd(w.spent)} / {usd(w.limit)}). "
         f"Resets {_reset_short(w, now, zone)}."
     )

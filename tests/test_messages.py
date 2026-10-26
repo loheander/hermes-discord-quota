@@ -39,7 +39,7 @@ def test_exceeded_reply_snapshot():
         "⚠️ Discord Quota Exceeded\n\n"
         "Your Daily spending limit has been reached:\n"
         "• Daily spend:  $1.04 / $1.00 (104%) — resets Today at 12:00 Europe/Stockholm\n"
-        "• Weekly spend: $3.18 / $5.00 (63%) — resets Friday at 12:00 Europe/Stockholm\n\n"
+        "• Weekly spend: $3.18 / $5.00 (64%) — resets Friday at 12:00 Europe/Stockholm\n\n"
         "Further requests are paused until the next reset. Run /quota to check your status.")
 
 
@@ -83,3 +83,94 @@ def test_pct_floors_and_deterministic():
     assert "99%" in warning_footer(s, NOW, Z)
     assert warning_footer(s, NOW, Z) == warning_footer(s, NOW, Z)
     assert append_footer("hi \n", "F") == "hi\n\nF" and append_footer("hi", None) is None
+
+
+def test_pct_rounds_half_up_caps_unless_exhausted():
+    now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
+    assert "(104%)" in warning_footer(st(1.0, 5.0, "1.044", "0", now), now, Z)
+    assert "(100%)" in warning_footer(st(1.0, 5.0, "1.00", "0", now), now, Z)
+
+
+def test_weekday_names_fixed_english():
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+    now = datetime(2026, 10, 26, 8, tzinfo=timezone.utc)  # Monday
+    got = []
+    for i in range(2, 9):
+        r = datetime(2026, 10, 26, 12, tzinfo=ZoneInfo(Z)) + timedelta(days=i)
+        got.append(reset_phrase(r, now, Z).split(" at ")[0])
+    assert got == ["Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+                   "Next Monday", "Next Tuesday"]
+    mon = reset_phrase(datetime(2026, 11, 2, 12, tzinfo=ZoneInfo(Z)), now, Z)
+    assert mon.startswith("Next Monday")
+
+
+def test_weekday_names_locale_independent(monkeypatch):
+    import locale
+    old = locale.setlocale(locale.LC_TIME)
+    for loc in ("sv_SE.UTF-8", "de_DE.UTF-8", "fr_FR.UTF-8"):
+        try:
+            locale.setlocale(locale.LC_TIME, loc)
+            break
+        except locale.Error:
+            continue
+    try:
+        from zoneinfo import ZoneInfo
+        r = datetime(2026, 10, 30, 12, tzinfo=ZoneInfo(Z))
+        assert reset_phrase(r, NOW, Z).startswith("Friday at")
+    finally:
+        locale.setlocale(locale.LC_TIME, old)
+
+
+def test_exceeded_variants():
+    now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
+    both = quota_exceeded_reply(st(1.0, 5.0, "1.5", "6", now), now, Z)
+    assert "Your Daily and Weekly spending limits have been reached:" in both
+    wk = quota_exceeded_reply(st(1.0, 5.0, "0.5", "6", now), now, Z)
+    assert "Your Weekly spending limit has been reached:" in wk
+    assert quota_exceeded_reply(st(0.0, 5.0, "0", "6", now), now, Z) == blocked_reply()
+    fb = "⚠️ Discord Quota Exceeded\n\nRun /quota to check your status."
+    assert quota_exceeded_reply(st(1.0, 5.0, "0", "0", now), now, Z) == fb
+    off = evaluate("u", QuotaConfig(enabled=False, default=Limits(1.0, 5.0)), L("9", "9"), now)
+    assert quota_exceeded_reply(off, now, Z) == fb
+
+
+def test_usd_negative_zero():
+    from discord_quota.messages import usd
+    assert usd(Decimal("-0.004")) == "$0.00"
+    assert usd(Decimal("-0.50")) == "-$0.50"
+
+
+def test_status_labels_and_lines():
+    now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
+    t = quota_status_text(st(0.0, 5.0, "0", "1", now), now, Z)
+    assert "none, access blocked ($0.00 spent" in t and t.endswith("Status: Blocked")
+    t = quota_status_text(st(1.0, 5.0, "1.2", "1", now), now, Z)
+    assert "$0.00 / $1.00 remaining (120% used" in t and t.endswith("Status: Exceeded")
+    assert quota_status_text(st(1.0, 5.0, "0.95", "1", now), now, Z).endswith("Status: Warning")
+    off = evaluate("u", QuotaConfig(enabled=False, default=Limits(1.0, 5.0)), L("9", "9"), now)
+    assert quota_status_text(off, now, Z).endswith("Status: Disabled")
+
+
+def test_footer_choices():
+    now = datetime(2026, 10, 26, 8, 0, tzinfo=timezone.utc)
+    f = warning_footer(st(1.0, 5.0, "0.91", "4.8", now), now, Z)
+    assert "96% of your Weekly" in f
+    f = warning_footer(st(1.0, 5.0, "0.95", "4.75", now), now, Z)  # tie: daily first
+    assert "95% of your Daily" in f
+    f = warning_footer(st(1.0, 5.0, "1.5", "5.5", now), now, Z)
+    assert "Daily spend is $1.50" in f and "until Friday at 12:00" in f
+
+
+def test_reset_phrase_dst_and_naive():
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(Z)
+    r = datetime(2026, 10, 26, 12, tzinfo=tz)  # day after DST ends (10-25)
+    # Naive now is UTC: 23:30Z on the 25th is 00:30 local on the 26th -> Today.
+    assert reset_phrase(r, datetime(2026, 10, 25, 23, 30), Z) == "Today at 12:00 Europe/Stockholm"
+    # 21:30Z on the 25th is 22:30 local on the 25th -> Tomorrow.
+    assert reset_phrase(r, datetime(2026, 10, 25, 21, 30), Z) == "Tomorrow at 12:00 Europe/Stockholm"
+    # Reset across the DST change still renders 12:00 local.
+    r2 = datetime(2026, 10, 25, 12, tzinfo=tz)
+    now = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
+    assert reset_phrase(r2, now, Z) == "Tomorrow at 12:00 Europe/Stockholm"
