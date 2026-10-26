@@ -224,9 +224,10 @@ def test_manifest_lists_registered_hooks(fake_ctx):
     from pathlib import Path
     from discord_quota import register
     register(fake_ctx)
-    text = (Path(__file__).resolve().parent.parent / "plugin.yaml").read_text()
-    for name in fake_ctx.hook_names():
-        assert f"  - {name}\n" in text
+    import yaml
+    manifest = yaml.safe_load((Path(__file__).resolve().parent.parent / "plugin.yaml").read_text())
+    # Hermes reads `provides_hooks`; the legacy `hooks` key is ignored by plugin doctor.
+    assert set(fake_ctx.hook_names()) <= set(manifest["provides_hooks"])
 
 
 # -- concurrency guard (#9) ------------------------------------------------
