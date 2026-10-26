@@ -78,7 +78,7 @@ def test_footers():
     assert warning_footer(st(1.0, 5.0, "0.1", "4.6", now), now, Z).endswith("Resets Friday at 12:00 Europe/Stockholm.")
 
 
-def test_pct_floors_and_deterministic():
+def test_pct_caps_and_deterministic():
     s = st(1.0, 5.0, "0.999", "0")
     assert "99%" in warning_footer(s, NOW, Z)
     assert warning_footer(s, NOW, Z) == warning_footer(s, NOW, Z)

@@ -1,8 +1,9 @@
 """Deterministic canned replies and footers (PLAN.md sections 6.6, 7.1-7.3).
 
 Pure functions over ``QuotaStatus``; ``now`` and the zone name are injected.
-Dollars are shown to 2 dp (half-up); percentages are floored integers so a
-window below 100% never reads "100%". Unlimited windows show "unlimited".
+Dollars are shown to 2 dp (half-up); percentages are half-up integers, capped at
+99% unless the window is EXHAUSTED so an under-limit window never reads "100%".
+Unlimited windows show "unlimited".
 """
 
 from __future__ import annotations
