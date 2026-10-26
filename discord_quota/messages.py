@@ -1,9 +1,10 @@
 """Deterministic canned replies and footers (PLAN.md sections 6.6, 7.1-7.3).
 
 Pure functions over ``QuotaStatus``; ``now`` and the zone name are injected.
-Dollars are shown to 2 dp (half-up); percentages are half-up integers, capped at
-99% unless the window is EXHAUSTED so an under-limit window never reads "100%".
-Unlimited windows show "unlimited".
+All user-facing text is Swedish (issue #37). Amounts are shown to 2 dp (half-up)
+with a decimal comma and the currency after the number ("0,45 USD"); percentages
+are half-up integers, capped at 99% unless the window is EXHAUSTED so an
+under-limit window never reads "100%". Unlimited windows show "obegränsad".
 """
 
 from __future__ import annotations
@@ -17,16 +18,16 @@ from .status import QuotaStatus, WindowState, WindowStatus
 FOOTER_RULE = "─" * 40
 
 BLOCKED_REPLY = (
-    "🚫 Access Blocked\n\n"
-    "You do not have an active spending quota for this bot.\n"
-    "Please contact the bot administrator to request access."
+    "🚫 Åtkomst blockerad\n\n"
+    "Du har ingen aktiv kostnadskvot för den här boten.\n"
+    "Kontakta botens administratör för att be om åtkomst."
 )
 
-UNAVAILABLE_REPLY = "Quota check is temporarily unavailable, please try again later."
+UNAVAILABLE_REPLY = "Kvotkontrollen är tillfälligt otillgänglig, försök igen senare."
 
 CONCURRENT_REPLY = (
-    "Another request of yours is still running and your remaining quota is low "
-    "({remaining}). Please wait for it to finish and try again."
+    "En annan förfrågan från dig pågår fortfarande och din återstående kvot är låg "
+    "({remaining}). Vänta tills den är klar och försök igen."
 )
 
 _CENT = Decimal("0.01")
@@ -36,7 +37,8 @@ def usd(v: Decimal) -> str:
     q = Decimal(v).quantize(_CENT, rounding=ROUND_HALF_UP)
     if q == 0:
         q = abs(q)  # no "$-0.00"
-    return f"-${-q}" if q < 0 else f"${q}"
+    text = f"{abs(q)}".replace(".", ",")
+    return f"-{text} USD" if q < 0 else f"{text} USD"
 
 
 def pct(w: WindowStatus) -> str:
@@ -47,7 +49,7 @@ def pct(w: WindowStatus) -> str:
     return f"{n}%"
 
 
-_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_WEEKDAYS = ("måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag", "söndag")
 
 
 def _local(dt: datetime, now: datetime, zone: str) -> tuple[datetime, datetime]:
@@ -60,30 +62,38 @@ def _local(dt: datetime, now: datetime, zone: str) -> tuple[datetime, datetime]:
 
 
 def reset_phrase(resets_at: datetime, now: datetime, zone: str) -> str:
-    """"Today at 12:00 Europe/Stockholm", "Tomorrow at ...", "Friday at ..."."""
+    """"idag kl. 12:00", "imorgon kl. 12:00", "fredag kl. 12:00", "nästa fredag kl. 12:00"."""
     r, n = _local(resets_at, now, zone)
     days = (r.date() - n.date()).days
-    clock = f"{r:%H:%M} {zone}"
+    clock = f"{r:%H:%M}"
     if days <= 0:
-        day = "Today"
+        day = "idag"
     elif days == 1:
-        day = "Tomorrow"
+        day = "imorgon"
     elif days >= 7:
-        day = f"Next {_WEEKDAYS[r.weekday()]}"
+        day = f"nästa {_WEEKDAYS[r.weekday()]}"
     else:
         day = f"{_WEEKDAYS[r.weekday()]}"
-    return f"{day} at {clock}"
+    return f"{day} kl. {clock}"
 
 
-def _title(w: WindowStatus) -> str:
-    return w.name.capitalize()
+_ADJ = {"daily": "dagliga", "weekly": "veckovisa"}
+_POSS = {"daily": "Dagens", "weekly": "Veckans"}
+
+
+def _adj(w: WindowStatus) -> str:
+    return _ADJ.get(w.name, w.name)
+
+
+def _poss(w: WindowStatus) -> str:
+    return _POSS.get(w.name, w.name.capitalize())
 
 
 def _spend(w: WindowStatus) -> str:
     if w.state is WindowState.UNLIMITED:
-        return f"{usd(w.spent)} / unlimited"
+        return f"{usd(w.spent)} / obegränsad"
     if w.state is WindowState.BLOCKED:
-        return f"{usd(w.spent)} / {usd(w.limit)} (blocked)"
+        return f"{usd(w.spent)} / {usd(w.limit)} (blockerad)"
     return f"{usd(w.spent)} / {usd(w.limit)} ({pct(w)})"
 
 
@@ -114,50 +124,50 @@ def quota_exceeded_reply(status: QuotaStatus, now: datetime, zone: str) -> str:
     """
     if is_blocked(status):
         return BLOCKED_REPLY
-    names = [_title(w) for w in status.blocking]
+    names = [_adj(w) for w in status.blocking]
     if not names:  # admitted or disabled: never raise inside hooks
-        return "⚠️ Discord Quota Exceeded\n\nRun /quota to check your status."
+        return "⚠️ Kvoten är slut\n\nKör /quota för att se din status."
     if len(names) == 1:
-        head = f"Your {names[0]} spending limit has been reached:"
+        head = f"Din {names[0]} kostnadsgräns är nådd:"
     else:
-        head = f"Your {' and '.join(names)} spending limits have been reached:"
+        head = f"Dina {' och '.join(names)} kostnadsgränser är nådda:"
     lines = []
-    for w, label in zip(status.windows, ("Daily spend: ", "Weekly spend:")):
-        lines.append(f"• {label} {_spend(w)} — resets {reset_phrase(w.resets_at, now, zone)}")
+    for w, label in zip(status.windows, ("Dagens kostnad:", "Veckans kostnad:")):
+        lines.append(f"• {label} {_spend(w)} — återställs {reset_phrase(w.resets_at, now, zone)}")
     return (
-        "⚠️ Discord Quota Exceeded\n\n"
+        "⚠️ Kvoten är slut\n\n"
         f"{head}\n" + "\n".join(lines) + "\n\n"
-        "Further requests are paused until the next reset. Run /quota to check your status."
+        "Nya förfrågningar pausas till nästa återställning. Kör /quota för att se din status."
     )
 
 
 def _status_label(status: QuotaStatus) -> str:
     if not status.enabled:
-        return "Disabled"
+        return "Avstängd"
     if is_blocked(status):
-        return "Blocked"
+        return "Blockerad"
     if status.exhausted:
-        return "Exceeded"
+        return "Överskriden"
     if status.warn:
-        return "Warning"
-    return "Active"
+        return "Varning"
+    return "Aktiv"
 
 
 def _quota_line(w: WindowStatus, now: datetime, zone: str) -> str:
     resets = reset_phrase(w.resets_at, now, zone)
     if w.state is WindowState.UNLIMITED:
-        return f"unlimited ({usd(w.spent)} spent — resets {resets})"
+        return f"obegränsad ({usd(w.spent)} förbrukat — återställs {resets})"
     if w.state is WindowState.BLOCKED:
-        return f"none, access blocked ({usd(w.spent)} spent — resets {resets})"
-    return f"{usd(w.remaining)} / {usd(w.limit)} remaining ({pct(w)} used — resets {resets})"
+        return f"ingen, åtkomst blockerad ({usd(w.spent)} förbrukat — återställs {resets})"
+    return f"{usd(w.remaining)} / {usd(w.limit)} kvar ({pct(w)} använt — återställs {resets})"
 
 
 def quota_status_text(status: QuotaStatus, now: datetime, zone: str) -> str:
     """PLAN.md 7.3."""
     return (
-        "📊 Discord Quota Status\n\n"
-        f"• Daily Quota:  {_quota_line(status.daily, now, zone)}\n"
-        f"• Weekly Quota: {_quota_line(status.weekly, now, zone)}\n"
+        "📊 Kvotstatus för Discord\n\n"
+        f"• Dagskvot:  {_quota_line(status.daily, now, zone)}\n"
+        f"• Veckokvot: {_quota_line(status.weekly, now, zone)}\n"
         f"• Status: {_status_label(status)}"
     )
 
@@ -171,25 +181,25 @@ def warning_footer(status: QuotaStatus, now: datetime, zone: str) -> str | None:
         until = max(w.resets_at for w in ex)
         w = max(ex, key=lambda x: (x.percent or 0))
         return (
-            f"{FOOTER_RULE}\n⚠️ Quota Exhausted: {_title(w)} spend is "
-            f"{usd(w.spent)} / {usd(w.limit)} ({pct(w)}). Further requests are "
-            f"paused until {reset_phrase(until, now, zone)}."
+            f"{FOOTER_RULE}\n⚠️ Kvoten är slut: {_poss(w)} kostnad är "
+            f"{usd(w.spent)} / {usd(w.limit)} ({pct(w)}). Nya förfrågningar pausas "
+            f"till {reset_phrase(until, now, zone)}."
         )
     warned = [w for w in status.windows if w.warn]
     if not warned:
         return None
     w = max(warned, key=lambda x: (x.percent or 0))
     return (
-        f"{FOOTER_RULE}\n⚠️ Quota Warning: You have used {pct(w)} of your "
-        f"{_title(w)} budget ({usd(w.spent)} / {usd(w.limit)}). "
-        f"Resets {_reset_short(w, now, zone)}."
+        f"{FOOTER_RULE}\n⚠️ Kvotvarning: Du har använt {pct(w)} av din "
+        f"{_adj(w)} budget ({usd(w.spent)} / {usd(w.limit)}). "
+        f"Återställs {_reset_short(w, now, zone)}."
     )
 
 
 def _reset_short(w: WindowStatus, now: datetime, zone: str) -> str:
-    """"at 12:00 Zone" when resetting today (PLAN 6.6), else with the day name."""
+    """"kl. 12:00" when resetting today (PLAN 6.6), else with the day name."""
     phrase = reset_phrase(w.resets_at, now, zone)
-    return phrase[len("Today "):] if phrase.startswith("Today ") else phrase
+    return phrase[len("idag "):] if phrase.startswith("idag ") else phrase
 
 
 def append_footer(response_text: str, footer: str | None) -> str | None:

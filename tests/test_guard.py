@@ -188,3 +188,10 @@ def test_pending_sentinel_not_interrupted():
     g, calls, _ = make(spent="1", running={"k": sentinel, "o": SimpleNamespace(session_id="s1")})
     assert g.pre_tool_call(session_id="s1", turn_id="t1")["action"] == "block"
     assert calls == []
+
+
+def test_block_message_is_swedish_and_asks_for_swedish_reply():
+    assert BLOCK_MESSAGE == (
+        "Kvoten tog slut mitt i turen: den dagliga eller veckovisa kostnadsgränsen i USD är nådd. "
+        "Sluta anropa verktyg och berätta för användaren på svenska att turen avbröts "
+        "eftersom kvoten är slut.")
