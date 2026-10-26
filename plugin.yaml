@@ -5,6 +5,8 @@ description: "Discord user spending quota plugin with daily/weekly limits, 90% w
 author: "Lo Gullstrand Heander"
 hooks:
   - pre_gateway_dispatch
+  - pre_llm_call
+  - subagent_start
   - post_api_request
   - subagent_stop
   - pre_tool_call
