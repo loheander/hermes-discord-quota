@@ -38,14 +38,12 @@ class WindowStatus:
     start: datetime
     resets_at: datetime
     state: WindowState
+    # Q > 0 and S/Q >= warn_threshold, no upper bound: also true when EXHAUSTED.
+    warn: bool = False
 
     @property
     def allowed(self) -> bool:
         return self.state in (WindowState.UNLIMITED, WindowState.ACTIVE, WindowState.WARN)
-
-    @property
-    def warn(self) -> bool:
-        return self.state is WindowState.WARN
 
 
 @dataclass(frozen=True)
@@ -60,8 +58,33 @@ class QuotaStatus:
         return not self.enabled or (self.daily.allowed and self.weekly.allowed)
 
     @property
+    def windows(self) -> tuple[WindowStatus, WindowStatus]:
+        return (self.daily, self.weekly)
+
+    @property
+    def blocking(self) -> tuple[WindowStatus, ...]:
+        """Windows that deny admission (empty when disabled; consistent with admitted)."""
+        if not self.enabled:
+            return ()
+        return tuple(w for w in self.windows if not w.allowed)
+
+    @property
     def warn(self) -> bool:
-        return self.enabled and (self.daily.warn or self.weekly.warn)
+        return self.enabled and any(w.warn for w in self.windows)
+
+    @property
+    def exhausted(self) -> bool:
+        """Any window at >= 100% of a positive limit (state EXHAUSTED).
+
+        BLOCKED (limit 0) does not count: it has no budget to exhaust and is
+        reported via ``blocking``.
+        """
+        return self.enabled and any(w.state is WindowState.EXHAUSTED for w in self.windows)
+
+    @property
+    def warning_only(self) -> bool:
+        """Warn threshold reached but no window exhausted (the 90-99% footer)."""
+        return self.warn and not self.exhausted
 
 
 def _dec(v: Any) -> Decimal:
@@ -69,24 +92,27 @@ def _dec(v: Any) -> Decimal:
 
 
 def window_status(name: str, limit: float, spent: Decimal, start: datetime,
-                  resets_at: datetime, warn_threshold: float) -> WindowStatus:
+                  resets_at: datetime, warn_threshold: float,
+                  unlimited: bool = False) -> WindowStatus:
     q = _dec(limit)
     remaining: Decimal | None = None
     percent: Decimal | None = None
-    if q < 0:
+    warn = False
+    if unlimited or q < 0:
         state = WindowState.UNLIMITED
     elif q == 0:
         state, remaining = WindowState.BLOCKED, _ZERO
     else:
         remaining = max(_ZERO, q - spent)
         percent = max(_ZERO, spent / q * 100)
+        warn = spent >= _dec(warn_threshold) * q
         if spent >= q:
             state = WindowState.EXHAUSTED
-        elif spent >= _dec(warn_threshold) * q:
+        elif warn:
             state = WindowState.WARN
         else:
             state = WindowState.ACTIVE
-    return WindowStatus(name, q, spent, remaining, percent, start, resets_at, state)
+    return WindowStatus(name, q, spent, remaining, percent, start, resets_at, state, warn)
 
 
 def evaluate(user_id: Any, config: QuotaConfig, ledger: Any,
@@ -98,11 +124,12 @@ def evaluate(user_id: Any, config: QuotaConfig, ledger: Any,
     q_day, q_week = config.limits_for(uid)
     d_start, d_next = daily_window(now, config.timezone)
     w_start, w_next = weekly_window(now, config.timezone)
-    s_day = ledger.spend_since(uid, d_start, d_next)
-    s_week = ledger.spend_since(uid, w_start, w_next)
+    off = not config.enabled  # disabled: no ledger query, UNLIMITED windows
+    s_day = _ZERO if off else ledger.spend_since(uid, d_start, d_next)
+    s_week = _ZERO if off else ledger.spend_since(uid, w_start, w_next)
     return QuotaStatus(
         uid,
-        window_status("daily", q_day, s_day, d_start, d_next, config.warn_threshold),
-        window_status("weekly", q_week, s_week, w_start, w_next, config.warn_threshold),
+        window_status("daily", q_day, s_day, d_start, d_next, config.warn_threshold, off),
+        window_status("weekly", q_week, s_week, w_start, w_next, config.warn_threshold, off),
         enabled=config.enabled,
     )

@@ -5,6 +5,7 @@ import pytest
 
 from discord_quota.config import Limits, QuotaConfig
 from discord_quota.ledger import Ledger
+from discord_quota.windows import weekly_window
 from discord_quota.status import WindowState as S, evaluate
 
 NOW = datetime(2026, 10, 26, 15, 0, tzinfo=timezone.utc)  # Monday
@@ -15,12 +16,15 @@ def cfg(daily, weekly, **kw):
 
 
 class FakeLedger:
+    """Spend keyed by window start, independent of call order."""
+
     def __init__(self, day="0", week="0"):
         self.day, self.week, self.calls = Decimal(day), Decimal(week), []
 
     def spend_since(self, user, start, end=None):
         self.calls.append((user, start, end))
-        return self.day if len(self.calls) % 2 == 1 else self.week
+        wk = weekly_window(NOW, "Europe/Stockholm")[0]
+        return self.week if start == wk and (end - start).days == 7 else self.day
 
 
 def ev(daily, weekly, day="0", week="0", **kw):
@@ -38,11 +42,14 @@ def test_below_threshold_active():
 def test_warn_at_threshold_boundary():
     st = ev(1.0, 10.0, day="0.90")
     assert st.daily.state is S.WARN and st.admitted and st.warn
+    assert st.warning_only and not st.exhausted and st.blocking == ()
 
 
 def test_exhausted_at_100():
     st = ev(1.0, 10.0, day="1.00")
-    assert st.daily.state is S.EXHAUSTED and not st.admitted and not st.warn
+    assert st.daily.state is S.EXHAUSTED and not st.admitted
+    assert st.warn and st.daily.warn and st.exhausted and not st.warning_only
+    assert st.blocking == (st.daily,) and st.windows == (st.daily, st.weekly)
     assert st.daily.remaining == 0
 
 
@@ -61,6 +68,7 @@ def test_unlimited_never_warns_or_blocks():
 def test_blocked_distinct_from_exhausted():
     st = ev(0, 10.0)
     assert st.daily.state is S.BLOCKED and not st.admitted
+    assert not st.exhausted and not st.warn and st.blocking == (st.daily,)
     assert st.daily.state is not S.EXHAUSTED
     assert st.daily.remaining == 0 and st.daily.percent is None
     assert st.weekly.state is S.ACTIVE
@@ -90,8 +98,30 @@ def test_custom_threshold():
 
 
 def test_disabled_admits():
-    st = evaluate("u1", QuotaConfig(enabled=False), FakeLedger("5", "5"), NOW)
-    assert st.admitted and not st.warn
+    led = FakeLedger("5", "5")
+    st = evaluate("u1", QuotaConfig(enabled=False, default=Limits(0, 1)), led, NOW)
+    assert st.admitted and not st.warn and not st.exhausted and st.blocking == ()
+    assert st.daily.state is S.UNLIMITED and st.weekly.state is S.UNLIMITED
+    assert not st.daily.warn and led.calls == []
+
+
+def test_naive_now_is_utc():
+    naive = evaluate("u", cfg(1.0, 1.0), FakeLedger(), NOW.replace(tzinfo=None))
+    aware = evaluate("u", cfg(1.0, 1.0), FakeLedger(), NOW)
+    assert naive.daily.start == aware.daily.start
+    assert naive.weekly.resets_at == aware.weekly.resets_at
+
+
+def test_threshold_one_warns_only_at_limit():
+    assert ev(1.0, 10.0, day="0.99", warn_threshold=1.0).daily.state is S.ACTIVE
+    st = ev(1.0, 10.0, day="1", warn_threshold=1.0)
+    assert st.daily.state is S.EXHAUSTED and st.daily.warn
+
+
+def test_small_threshold():
+    assert ev(1.0, 10.0, day="0", warn_threshold=0.01).daily.state is S.ACTIVE
+    assert ev(1.0, 10.0, day="0.01", warn_threshold=0.01).daily.state is S.WARN
+    assert ev(1.0, 10.0, day="0", warn_threshold=0.0).daily.state is S.WARN
 
 
 def test_windows_and_user_passed_to_ledger():
