@@ -53,7 +53,9 @@ def _default_estimator(model: str, usage: dict, provider: str | None, base_url: 
 
 
 class SpendRecorder:
-    def __init__(self, ledger: Any, resolver: Any, estimator: Callable | None = None) -> None:
+    def __init__(self, ledger: Any, resolver: Any, estimator: Callable | None = None,
+                 after_record: Callable | None = None) -> None:
+        self._after_record = after_record
         self._ledger = ledger
         self._resolver = resolver
         self._estimate = estimator or _default_estimator
@@ -160,3 +162,5 @@ class SpendRecorder:
         self._ledger.record(user, session_id, total, model, provider, turn_id=turn_id,
                             input_tokens=input_tokens,
                             output_tokens=_int(usage.get("output_tokens")))
+        if self._after_record is not None:  # PLAN.md 6.3 step 5; never raises
+            self._after_record(user, session_id, turn_id, _int(kw.get("assistant_tool_call_count")))

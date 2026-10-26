@@ -33,6 +33,7 @@ def register(ctx: Any) -> None:
     """Called once by Hermes with a ``PluginContext``."""
     from .admission import AdmissionGate
     from .config import load_config
+    from .guard import MidTurnGuard
     from .ledger import Ledger, default_db_path
     from .recorder import SpendRecorder
     from .resolver import UserResolver
@@ -44,10 +45,12 @@ def register(ctx: Any) -> None:
         logger.warning("discord_quota: could not resolve ledger path", exc_info=True)
         ledger = Ledger()
     resolver = UserResolver()
-    recorder = SpendRecorder(ledger, resolver)
     gate = AdmissionGate(getter, ledger, resolver)
+    guard = MidTurnGuard(getter, ledger, resolver, gateway_getter=lambda: gate.gateway)
+    recorder = SpendRecorder(ledger, resolver, after_record=guard.after_record)
     ctx.register_hook("pre_gateway_dispatch", gate.pre_gateway_dispatch)
     ctx.register_hook("pre_llm_call", gate.pre_llm_call)
     ctx.register_hook("subagent_start", gate.subagent_start)
     ctx.register_hook("on_session_end", gate.on_session_end)
     ctx.register_hook("post_api_request", recorder.post_api_request)
+    ctx.register_hook("pre_tool_call", guard.pre_tool_call)
