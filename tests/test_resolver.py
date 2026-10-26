@@ -6,12 +6,11 @@ from discord_quota.resolver import UserResolver
 
 
 def env(platform="", user=""):
-    d = {"HERMES_SESSION_PLATFORM": platform, "HERMES_SESSION_USER_ID": user}
-    return lambda name, default="": d.get(name, default)
+    return lambda: (platform, user)
 
 
 def mk(platform="", user="", **kw):
-    return UserResolver(env_getter=env(platform, user), **kw)
+    return UserResolver(context_getter=env(platform, user), **kw)
 
 
 def test_context_var_wins_over_maps():
@@ -39,7 +38,7 @@ def test_non_discord_is_none():
 
 
 def test_context_platform_non_discord_blocks_map():
-    r = mk("subagent", "")
+    r = mk("telegram", "")
     r.bind_session("discord", "u1", session_id="s")
     assert r.resolve(session_id="s") is None
 
@@ -110,8 +109,72 @@ def test_hermes_lookup_is_lazy_and_optional(monkeypatch):
     assert r.resolve(session_id="s") == "u1"
     mod = types.ModuleType("gateway.session_context")
     vals = {"HERMES_SESSION_PLATFORM": "discord", "HERMES_SESSION_USER_ID": "42"}
-    mod.get_session_env = lambda n, d="": vals.get(n, d)
+    import contextvars
+    mod._UNSET = object()
+    mod._SESSION_PLATFORM = contextvars.ContextVar('p', default=mod._UNSET)
+    mod._SESSION_USER_ID = contextvars.ContextVar('u', default=mod._UNSET)
+    mod._SESSION_PLATFORM.set('discord'); mod._SESSION_USER_ID.set('42')
     pkg = types.ModuleType("gateway"); pkg.session_context = mod
     monkeypatch.setitem(sys.modules, "gateway", pkg)
     monkeypatch.setitem(sys.modules, "gateway.session_context", mod)
     assert r.resolve(session_id="s") == "42"
+
+
+def test_environ_never_read(monkeypatch):
+    """Process-global env must not be authoritative; unset ContextVars -> maps/None."""
+    import contextvars
+    monkeypatch.setenv("HERMES_SESSION_PLATFORM", "discord")
+    monkeypatch.setenv("HERMES_SESSION_USER_ID", "env-user")
+    mod = types.ModuleType("gateway.session_context")
+    mod._UNSET = object()
+    mod._SESSION_PLATFORM = contextvars.ContextVar("p", default=mod._UNSET)
+    mod._SESSION_USER_ID = contextvars.ContextVar("u", default=mod._UNSET)
+    mod.get_session_env = lambda n, d="": __import__("os").getenv(n, d)
+    pkg = types.ModuleType("gateway"); pkg.session_context = mod
+    monkeypatch.setitem(sys.modules, "gateway", pkg)
+    monkeypatch.setitem(sys.modules, "gateway.session_context", mod)
+    r = UserResolver()
+    assert r.resolve(session_id="s") is None
+    r.bind_session("discord", "mapped", session_id="s")
+    assert r.resolve(session_id="s") == "mapped"
+
+
+def test_discord_with_empty_user_falls_to_maps():
+    r = mk("discord", "")
+    r.bind_turn("t", "discord", "u1")
+    assert r.resolve(turn_id="t") == "u1"
+
+
+def test_child_inherits_context_user():
+    r = mk("discord", "X")
+    r.bind_child("c", parent_session_id="p")
+    assert r.resolve(session_id="c") == "X"
+    r2 = mk()  # later, outside the context
+    r2.bind_child("c", parent_session_id="p")
+    assert r2.resolve(session_id="c") is None
+
+
+def test_child_snapshot_prefers_turn_then_context_then_session():
+    r = mk("discord", "ctxuser")
+    r.bind_session("discord", "last", session_id="p")
+    r.bind_turn("t1", "discord", "turnuser")
+    r.bind_child("c1", parent_session_id="p", parent_turn_id="t1")
+    r.bind_child("c2", parent_session_id="p")
+    r._context = lambda: ("", "")
+    assert r.resolve(session_id="c1") == "turnuser"
+    assert r.resolve(session_id="c2") == "ctxuser"
+    r.bind_child("c3", parent_session_id="p")
+    assert r.resolve(session_id="c3") == "last"
+
+
+def test_interleaved_users_on_one_session():
+    r = mk()
+    r.bind_turn("ta", "discord", "A")
+    r.bind_session("discord", "A", session_id="S")
+    r.bind_turn("tb", "discord", "B")
+    r.bind_session("discord", "B", session_id="S")  # last writer wins on session map
+    assert r.resolve(session_id="S", turn_id="ta") == "A"
+    assert r.resolve(session_id="S", turn_id="tb") == "B"
+    r.bind_child("ca", parent_session_id="S", parent_turn_id="ta")
+    assert r.resolve(session_id="ca") == "A"
+    assert r.resolve(session_id="S", turn_id="unbound") == "B"  # last-resort hint

@@ -218,8 +218,8 @@ CREATE INDEX IF NOT EXISTS idx_trans_user_time ON quota_transactions(user_id, ti
 ### 6.2 User ID Resolution Across Hooks
 Instead of querying `SessionDB` on every hook call, resolve the Discord `user_id` using a fast 3-tier fallback:
 1. **Task-Local ContextVar (Primary)**: Read `get_session_env("HERMES_SESSION_PLATFORM")` and `get_session_env("HERMES_SESSION_USER_ID")` from `gateway.session_context`. This is bound per-turn by the gateway for the exact sender (even in shared guild channels).
-2. **In-Memory Turn/Session Map (Secondary)**: Map `turn_id -> (platform, user_id)` and `session_id -> (platform, user_id)` populated during `pre_gateway_dispatch` / `pre_llm_call`.
-3. **Parent Session Map for Subagents**: Map `child_session_id -> user_id` via `parent_session_id` during `subagent_stop`.
+2. **In-Memory Turn/Session Map (Secondary)**: Map `turn_id -> (platform, user_id)` and `session_id -> (platform, user_id)` populated by `bind_turn` in `pre_llm_call` (`session_id`, `turn_id`, `platform`, `sender_id`). `pre_gateway_dispatch` has only `event.source` and the session store (no turn/session id), so it can at most bind by `session_key`. The turn binding is authoritative; session entries are a last-resort hint because one session serves several users in shared channels.
+3. **Parent Session Map for Subagents**: Map `child_session_id -> user_id` via `parent_session_id` / `parent_turn_id` during `subagent_start`. Children normally inherit the parent's ContextVars (`copy_context`). Read the ContextVars directly, never `get_session_env` (it falls back to process-global `os.environ`); decide Discord status only via the resolver, not the hook payload `platform` (which is `"subagent"` for children).
 
 ### 6.3 `post_api_request` (Spend Recording & Mid-Turn Trigger)
 - **Logic**:
