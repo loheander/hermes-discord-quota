@@ -24,6 +24,11 @@ BLOCKED_REPLY = (
 
 UNAVAILABLE_REPLY = "Quota check is temporarily unavailable, please try again later."
 
+CONCURRENT_REPLY = (
+    "Another request of yours is still running and your remaining quota is low "
+    "({remaining}). Please wait for it to finish and try again."
+)
+
 _CENT = Decimal("0.01")
 
 
@@ -88,6 +93,11 @@ def is_blocked(status: QuotaStatus) -> bool:
 
 def unavailable_reply() -> str:
     return UNAVAILABLE_REPLY
+
+
+def concurrent_reply(remaining: Decimal) -> str:
+    """PLAN.md 6.1 step 5: parallel turn rejected on a low balance."""
+    return CONCURRENT_REPLY.format(remaining=usd(remaining))
 
 
 def blocked_reply() -> str:

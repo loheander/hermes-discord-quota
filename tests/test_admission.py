@@ -227,3 +227,206 @@ def test_manifest_lists_registered_hooks(fake_ctx):
     text = (Path(__file__).resolve().parent.parent / "plugin.yaml").read_text()
     for name in fake_ctx.hook_names():
         assert f"  - {name}\n" in text
+
+
+# -- concurrency guard (#9) ------------------------------------------------
+import threading
+
+from discord_quota.admission import CONCURRENT_REASON, MARKER_GRACE_SECONDS
+
+
+class KeyedStore:
+    def _generate_session_key(self, source):
+        return f"agent:main:discord:group:{source.chat_id}"
+
+
+class Clock:
+    t = 1000.0
+
+    def __call__(self):
+        return self.t
+
+
+def two_chan(gate, gw, text="hi", user="42"):
+    out = []
+    for chat in ("111", "222"):
+        ev = Event(text, source=src(chat_id=chat, user_id=user))
+        out.append(gate.pre_gateway_dispatch(event=ev, gateway=gw, session_store=KeyedStore()))
+    return out
+
+
+def test_second_channel_rejected_when_low_balance():
+    gate, ad, gw, _ = make(daily=1.0, spent="0.95")
+    first, second = two_chan(gate, gw)
+    assert first is None
+    assert second["reason"] == CONCURRENT_REASON
+    assert len(ad.sent) == 1 and "$0.05" in ad.sent[0][1]
+
+
+def test_second_channel_admitted_with_budget():
+    gate, ad, gw, _ = make(daily=1.0, spent="0.5")
+    assert two_chan(gate, gw) == [None, None]
+    assert ad.sent == []
+
+
+def test_exact_threshold_admitted():
+    gate, _, gw, _ = make(daily=1.0, spent="0.90")  # remaining 0.10, not < 0.10
+    assert two_chan(gate, gw) == [None, None]
+
+
+def test_unlimited_never_guarded():
+    gate, _, gw, _ = make(daily=-1, weekly=-1, spent="999")
+    assert two_chan(gate, gw) == [None, None]
+    assert gate.inflight_count("42") == 0
+
+
+def test_same_channel_not_parallel():
+    gate, _, gw, _ = make(daily=1.0, spent="0.95")
+    ev = lambda: Event("x", source=src(chat_id="111"))
+    assert gate.pre_gateway_dispatch(event=ev(), gateway=gw, session_store=KeyedStore()) is None
+    assert gate.pre_gateway_dispatch(event=ev(), gateway=gw, session_store=KeyedStore()) is None
+
+
+def test_other_users_independent():
+    gate, _, gw, _ = make(daily=1.0, spent="0.95")
+    a = gate.pre_gateway_dispatch(event=Event(source=src(chat_id="1", user_id="1")),
+                                  gateway=gw, session_store=KeyedStore())
+    b = gate.pre_gateway_dispatch(event=Event(source=src(chat_id="2", user_id="2")),
+                                  gateway=gw, session_store=KeyedStore())
+    assert a is None and b is None
+
+
+def test_on_session_end_clears_marker():
+    gate, _, gw, _ = make(daily=1.0, spent="0.95")
+    gate.pre_gateway_dispatch(event=Event(source=src(chat_id="111")), gateway=gw,
+                              session_store=KeyedStore())
+    gate.pre_llm_call(session_id="s1", turn_id="t1", platform="discord", sender_id="42")
+    assert gate.inflight_count("42") == 1
+    gate.on_session_end(session_id="s1", turn_id="t1")
+    assert gate.inflight_count("42") == 0
+    ev = Event(source=src(chat_id="222"))
+    assert gate.pre_gateway_dispatch(event=ev, gateway=gw, session_store=KeyedStore()) is None
+
+
+def test_stale_marker_cleared_when_agent_gone():
+    clock = Clock()
+    gate, _, gw, _ = make(daily=1.0, spent="0.95")
+    gate._mono = clock
+    gw._running_agents = {"agent:main:discord:group:111": object()}
+    first = gate.pre_gateway_dispatch(event=Event(source=src(chat_id="111")), gateway=gw,
+                                      session_store=KeyedStore())
+    assert first is None
+    clock.t += MARKER_GRACE_SECONDS + 1
+    ev = Event(source=src(chat_id="222"))
+    # agent still running: rejected
+    assert gate.pre_gateway_dispatch(event=ev, gateway=gw,
+                                     session_store=KeyedStore())["reason"] == CONCURRENT_REASON
+    gw._running_agents.clear()  # crash: agent gone
+    assert gate.pre_gateway_dispatch(event=ev, gateway=gw, session_store=KeyedStore()) is None
+
+
+def test_marker_expires_without_running_agents_map():
+    clock = Clock()
+    gate, _, gw, _ = make(daily=1.0, spent="0.95")
+    gate._mono = clock
+    gate.pre_gateway_dispatch(event=Event(source=src(chat_id="111")), gateway=gw,
+                              session_store=KeyedStore())
+    clock.t += 901
+    assert gate.pre_gateway_dispatch(event=Event(source=src(chat_id="222")), gateway=gw,
+                                     session_store=KeyedStore()) is None
+
+
+def test_thread_safe_exactly_one_admitted():
+    gate, _, gw, _ = make(daily=1.0, spent="0.95")
+    results, barrier = [], threading.Barrier(8)
+
+    def run(i):
+        ev = Event(source=src(chat_id=str(i)))
+        barrier.wait()
+        results.append(gate.pre_gateway_dispatch(event=ev, gateway=gw, session_store=KeyedStore()))
+
+    ts = [threading.Thread(target=run, args=(i,)) for i in range(8)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert sum(r is None for r in results) == 1
+
+
+def _admit(gate, gw, chat, user="42"):
+    return gate.pre_gateway_dispatch(event=Event(source=src(chat_id=chat, user_id=user)),
+                                     gateway=gw, session_store=KeyedStore())
+
+
+def test_attach_by_session_key_not_oldest_marker():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    _admit(gate, gw, "111")
+    _admit(gate, gw, "222")
+    key_b = "agent:main:discord:group:222"
+    gate._context_session_key = lambda: key_b
+    gate.pre_llm_call(session_id="sB", turn_id="tB", platform="discord", sender_id="42")
+    gate.on_session_end(session_id="sB")
+    # channel 222 released, channel 111 still guarded
+    assert gate.inflight_count("42") == 1
+    assert list(gate._inflight["42"]) == ["agent:main:discord:group:111"]
+
+
+def test_attach_ambiguous_without_key_is_skipped():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    _admit(gate, gw, "111")
+    _admit(gate, gw, "222")
+    gate._context_session_key = lambda: ""
+    gate.pre_llm_call(session_id="sX", turn_id="t", platform="discord", sender_id="42")
+    gate.on_session_end(session_id="sX")
+    assert gate.inflight_count("42") == 2
+
+
+def test_attach_single_marker_without_key():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    _admit(gate, gw, "111")
+    gate._context_session_key = lambda: ""
+    gate.pre_llm_call(session_id="s1", turn_id="t", platform="discord", sender_id="42")
+    gate.on_session_end(session_id="s1")
+    assert gate.inflight_count("42") == 0
+
+
+def test_readmission_same_key_keeps_session_id():
+    clock = Clock()
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    gate._mono = clock
+    gate._context_session_key = lambda: "agent:main:discord:group:111"
+    _admit(gate, gw, "111")
+    gate.pre_llm_call(session_id="s1", turn_id="t", platform="discord", sender_id="42")
+    clock.t += 5
+    _admit(gate, gw, "111")  # queued second message, same session
+    marker = gate._inflight["42"]["agent:main:discord:group:111"]
+    assert marker[1] == "s1" and marker[0] == 1000.0
+    gate.on_session_end(session_id="s1")
+    assert gate.inflight_count("42") == 0
+
+
+def test_readmission_refreshes_unattached_timestamp():
+    clock = Clock()
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    gate._mono = clock
+    _admit(gate, gw, "111")
+    clock.t += 5
+    _admit(gate, gw, "111")
+    assert gate._inflight["42"]["agent:main:discord:group:111"][0] == 1005.0
+
+
+def test_thread_safe_interleaved_attach_release():
+    gate, _, gw, _ = make(daily=1.0, spent="0.5")
+    for i in range(8):
+        _admit(gate, gw, str(i))
+    errors = []
+
+    def run(i):
+        try:
+            gate._attach_session("42", f"s{i}", f"agent:main:discord:group:{i}")
+            gate.on_session_end(session_id=f"s{i}")
+        except Exception as exc:  # pragma: no cover
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(8)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert not errors and gate.inflight_count("42") == 0

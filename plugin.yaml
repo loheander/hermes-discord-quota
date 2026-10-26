@@ -7,6 +7,7 @@ hooks:
   - pre_gateway_dispatch
   - pre_llm_call
   - subagent_start
+  - on_session_end
   - post_api_request
   - subagent_stop
   - pre_tool_call
