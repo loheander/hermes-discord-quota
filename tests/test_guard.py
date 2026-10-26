@@ -192,6 +192,6 @@ def test_pending_sentinel_not_interrupted():
 
 def test_block_message_is_swedish_and_asks_for_swedish_reply():
     assert BLOCK_MESSAGE == (
-        "Kvoten tog slut mitt i turen: den dagliga eller veckovisa kostnadsgränsen i USD är nådd. "
-        "Sluta anropa verktyg och berätta för användaren på svenska att turen avbröts "
-        "eftersom kvoten är slut.")
+        "Pengarna tog slut mitt i svaret: gränsen per dag eller per vecka är nådd. "
+        "Sluta anropa verktyg och berätta för användaren på svenska att svaret avbröts "
+        "eftersom pengarna är slut.")

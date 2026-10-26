@@ -11,11 +11,12 @@ Enforces configurable daily and weekly spending budgets (in USD) per Discord use
   - Weekly budget resetting at 12:00 Europe/Stockholm every Friday.
 - **USD Spending Limits**: Configured in `~/.hermes/config.yaml` with global defaults and per-user overrides.
 - **90% Deterministic Warning Footers**: Automatically appends a zero-LLM usage warning footer to responses when a user exceeds 90% of their daily or weekly limit.
-- **Swedish Messages**: Every reply, footer and `/quota` line shown to Discord users is in Swedish, with Swedish weekdays, the 24-hour clock and a decimal comma ("0,45 USD"). Logs and the `hermes quota` admin CLI stay in English. Examples:
-  - Reply when the limit is reached: `⚠️ Kvoten är slut` / `Din dagliga kostnadsgräns är nådd:` / `• Dagens kostnad: 1,04 USD / 1,00 USD (104%) — återställs idag kl. 12:00`
-  - Warning footer: `⚠️ Kvotvarning: Du har använt 92% av din dagliga budget (0,92 USD / 1,00 USD). Återställs kl. 12:00.`
-  - Exhausted footer: `⚠️ Kvoten är slut: Veckans kostnad är 5,20 USD / 5,00 USD (104%). Nya förfrågningar pausas till fredag kl. 12:00.`
-  - `/quota`: `• Dagskvot:  0,58 USD / 1,00 USD kvar (42% använt — återställs idag kl. 12:00)`
+- **Swedish Messages**: Every reply, footer and `/quota` line shown to Discord users is in plain Swedish, with "per dag" / "per vecka", Swedish weekdays, the 24-hour clock and amounts in kronor ("4,50 kr") converted from the USD ledger at a fixed rate of 10 SEK per USD. Logs and the `hermes quota` admin CLI stay in English and USD. Examples:
+  - Reply when the limit is reached: `⚠️ Pengarna är slut` / `Du har använt upp dina pengar per dag:` / `• Per dag: 10,40 kr av 10,00 kr (104%) — återställs idag kl. 12:00`
+  - Warning footer: `⚠️ Snart slut: du har använt 92% av dina pengar per dag (9,20 kr av 10,00 kr). Återställs kl. 12:00.`
+  - Exhausted footer: `⚠️ Pengarna är slut: du har använt 52,00 kr av 50,00 kr per vecka (104%). Du kan skriva igen fredag kl. 12:00.`
+  - `/quota`: `• Per dag: 5,80 kr kvar av 10,00 kr (42% använt — återställs idag kl. 12:00)`
+  - Unavailable: `Kan inte kolla hur mycket pengar du har kvar, försök senare.`
 - **Media Charging**: `image_generate` and `video_generate` spend (provider-reported cost from the tool result, via `post_tool_call`) is charged to the Discord user's quota as `media` rows; free providers record $0 and results without a cost record $0 with a warning.
 - **Mid-Turn Hard Block**: Halts tool calls via `pre_tool_call` and interrupts the turn if a running turn exhausts the user's quota mid-execution.
 - **Special Quota Values**:
