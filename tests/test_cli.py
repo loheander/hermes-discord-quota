@@ -174,8 +174,14 @@ def test_argparse_wiring_and_run(tmp_path):
 def test_run_reports_errors(tmp_path):
     cli, ledger, *_ , err = build(tmp_path)
     ledger.user_ids = lambda: (_ for _ in ()).throw(RuntimeError("db down"))
-    assert cli.status() if False else cli.run(argparse.Namespace(quota_action="status", user_id=None)) == 1
+    assert cli.run(argparse.Namespace(quota_action="status", user_id=None)) == 1
     assert "db down" in err.getvalue()
+
+
+def test_status_blank_user_id_is_error(tmp_path):
+    cli, ledger, cfg, out, err = build(tmp_path)
+    assert cli.status("  ") == 2
+    assert "empty" in err.getvalue()
 
 
 def test_registered(fake_ctx):

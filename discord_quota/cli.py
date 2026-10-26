@@ -132,8 +132,12 @@ class AdminCli:
     def status(self, user_id: str | None = None) -> int:
         config = self._config()
         now = self._clock()
-        if user_id is not None and self._clean_user(user_id):
-            self._print(self.render_user(self._clean_user(user_id), config, now))
+        if user_id is not None:
+            uid = self._clean_user(user_id)
+            if not uid:
+                self._print("error: user id must not be empty", err=True)
+                return 2
+            self._print(self.render_user(uid, config, now))
             return 0
         users = self._ledger.user_ids()
         if not users:
