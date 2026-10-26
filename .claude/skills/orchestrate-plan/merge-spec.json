@@ -1,0 +1,19 @@
+{
+  "model": "typesafe/jev-1.14",
+  "context": "Merge gate for pull requests in hermes-discord-quota, a Python Hermes Agent plugin enforcing per-user Discord spending quotas. Each item summarises one PR after a review/fix round: the issue's acceptance criteria, the test result, the latest reviewer findings that were retained as actionable and impactful, the status of earlier retained comments, and the diff stat. A PR should merge only when it meets the acceptance criteria, tests pass, and no retained review comment is still open.",
+  "questions": {
+    "ready_to_merge": {
+      "type": "noul",
+      "instructions": "Is this pull request ready to merge into main?",
+      "criteria": {
+        "true": "Tests pass, every acceptance criterion is plausibly covered by the change and its tests, the latest review round retained no new findings, and all earlier retained comments are resolved.",
+        "false": "Tests fail or were not run, an acceptance criterion looks uncovered, a retained comment is unresolved, or the latest review retained new findings."
+      },
+      "examples": [
+        {"item": "Tests: passed (24 passed). New retained findings: none. Earlier retained: R1-1 resolved, R1-2 resolved. Acceptance criteria: 4 listed, implementer reports all covered.", "ready_to_merge": true},
+        {"item": "Tests: passed (12 passed). New retained findings: R2-1 [high] reliability: exception in hook escapes to gateway. Earlier retained: R1-1 resolved.", "ready_to_merge": false},
+        {"item": "Tests: failed (2 failed, 10 passed). New retained findings: none. Earlier retained: none.", "ready_to_merge": false}
+      ]
+    }
+  }
+}

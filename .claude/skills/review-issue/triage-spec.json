@@ -1,0 +1,35 @@
+{
+  "model": "typesafe/jev-1.14",
+  "context": "Code review comments on pull requests for hermes-discord-quota, a Python plugin for Hermes Agent that enforces per-user daily and weekly USD spending quotas for Discord users (SQLite ledger, Europe/Stockholm reset windows, gateway admission gate, mid-turn tool blocking, warning footers). Each item is one comment from an automated reviewer, with the file, severity and the issue the PR implements. The labels decide which comments the implementation agent must fix before merge; nits and matters of taste should be dropped.",
+  "questions": {
+    "actionable": {
+      "type": "noul",
+      "instructions": "Does this comment ask for a specific change that a developer can make in this PR?",
+      "criteria": {
+        "true": "It names a concrete defect or gap and a change that fixes it (code, test, or config), within the scope of the issue.",
+        "false": "It is vague, a question, praise, a restatement of the code, speculative without a concrete change, or asks for work outside the issue's scope."
+      },
+      "examples": [
+        {"item": "ledger.py:40 [high] sum_spend() opens a new sqlite3 connection per call and never closes it; under the gateway this leaks file handles. Use a context manager or a module-level connection.", "actionable": true},
+        {"item": "windows.py:12 [low] Consider whether this could be more elegant.", "actionable": false},
+        {"item": "hooks.py:88 [medium] It would be nice to also support Telegram users here.", "actionable": false}
+      ]
+    },
+    "impact": {
+      "type": "choice",
+      "instructions": "What does fixing this comment mainly improve?",
+      "criteria": {
+        "reliability": "Prevents wrong results, crashes, data loss, races, money miscounting, quota bypass, or exceptions escaping hooks.",
+        "architecture": "Fixes module boundaries, coupling, duplication of logic, misuse of the host framework's APIs, or state that leaks between users or sessions.",
+        "quality": "Adds missing tests for real behaviour, fixes misleading names or docs that would cause bugs, or removes dead or confusing code.",
+        "none": "Style, formatting, naming taste, micro-optimisation, or personal preference with no effect on correctness, design or maintainability."
+      },
+      "examples": [
+        {"item": "windows.py:30 [high] Uses datetime.now() without tz, so the 12:00 Europe/Stockholm boundary is wrong on a UTC host.", "impact": "reliability"},
+        {"item": "admission.py:15 [medium] Re-implements the limit parsing already in config.py; call config.limits_for(user_id) instead.", "impact": "architecture"},
+        {"item": "test_ledger.py [medium] No test covers the window sum across the 12:00 boundary, which is the acceptance criterion.", "impact": "quality"},
+        {"item": "format.py:8 [low] Prefer f-strings over str.format here.", "impact": "none"}
+      ]
+    }
+  }
+}
