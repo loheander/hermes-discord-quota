@@ -32,6 +32,7 @@ def _ttl_config_getter(loader: Any, ttl: float = CONFIG_TTL_SECONDS, clock: Any 
 def register(ctx: Any) -> None:
     """Called once by Hermes with a ``PluginContext``."""
     from .admission import AdmissionGate
+    from .cli import CLI_DESCRIPTION, AdminCli
     from .command import DESCRIPTION, QuotaCommand
     from .config import load_config
     from .footer import FooterHook
@@ -62,3 +63,6 @@ def register(ctx: Any) -> None:
     command = QuotaCommand(getter, ledger, resolver)
     ctx.register_hook("pre_gateway_dispatch", command.observe_dispatch)
     ctx.register_command("quota", command.handle, description=DESCRIPTION)
+    admin = AdminCli(getter, ledger)
+    ctx.register_cli_command("quota", "Inspect and adjust Discord user spend quotas",
+                             admin.setup, admin.run, description=CLI_DESCRIPTION)

@@ -205,6 +205,15 @@ class Ledger:
             conn.close()
         return [Transaction(r[0], r[1], r[2], r[3], r[4], round_cost(r[5]), *r[6:]) for r in rows]
 
+    def user_ids(self) -> list[str]:
+        """All user ids with at least one row, sorted."""
+        conn = self._connect()
+        try:
+            rows = conn.execute("SELECT DISTINCT user_id FROM quota_transactions ORDER BY user_id").fetchall()
+        finally:
+            conn.close()
+        return [r[0] for r in rows]
+
     def delete_window(self, user_id: str, start: Any, end: Any = None) -> int:
         """Delete a user's rows in [start, end); returns the number deleted."""
         sql = "DELETE FROM quota_transactions WHERE user_id = ? AND timestamp >= ?"

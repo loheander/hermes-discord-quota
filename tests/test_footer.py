@@ -70,5 +70,8 @@ def test_registered():
         def register_command(self, *a, **k):
             pass
 
+        def register_cli_command(self, *a, **k):
+            pass
+
     register(Ctx())
     assert "transform_llm_output" in seen
