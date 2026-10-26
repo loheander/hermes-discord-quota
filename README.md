@@ -20,7 +20,7 @@ Enforces configurable daily and weekly spending budgets (in USD) per Discord use
 
 ## Configuration
 
-Set limits under `discord_quota` in `~/.hermes/config.yaml` (global defaults, per-user overrides, timezone, warn threshold; see PLAN.md). Spend is stored in `~/.hermes/discord_quota.db`.
+Set limits under `discord_quota` in `~/.hermes/config.yaml` (global defaults, per-user overrides, timezone, warn threshold; see PLAN.md). Set `free_providers: [vertex]` to count calls answered by those providers (e.g. credit-covered) as $0; a call 429'd on vertex and answered by a fallback provider is still charged. Spend is stored in `~/.hermes/discord_quota.db`.
 
 ## Admin CLI
 

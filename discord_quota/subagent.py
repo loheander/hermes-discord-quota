@@ -10,6 +10,10 @@ Dedupe: if the ledger already holds any row for the child session (recorded per
 call by ``post_api_request``) or a prior 'subagent' row, nothing is written.
 Discord status and user come only from ``UserResolver.resolve``.
 
+Free providers: a child whose ``billing_provider`` is in ``free_providers`` is
+recorded at $0; a child that mixed providers is judged by ``billing_provider``
+only.
+
 Known gap: if the child's cost is not yet persisted (0/None) nothing is
 recorded and the hook is not marked done, so a later firing can still record it.
 """
@@ -23,6 +27,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 from .ledger import round_cost
+
+from .config import provider_is_free
 
 logger = logging.getLogger("hermes_discord_quota")
 
@@ -56,12 +62,17 @@ def _default_cost_lookup(child_session_id: str) -> tuple[Decimal | None, str, st
 class SubagentAccountant:
     def __init__(self, ledger: Any, resolver: Any,
                  cost_lookup: Callable[[str], tuple] | None = None,
-                 after_record: Callable | None = None) -> None:
+                 after_record: Callable | None = None,
+                 config_getter: Callable | None = None) -> None:
+        self._config_getter = config_getter
         self._after_record = after_record
         self._ledger = ledger
         self._resolver = resolver
         self._lookup = cost_lookup or _default_cost_lookup
         self._lock = threading.Lock()
+
+    def _is_free(self, provider: Any) -> bool:
+        return provider_is_free(self._config_getter, provider)
 
     def subagent_stop(self, **kw: Any) -> None:
         try:
@@ -83,6 +94,8 @@ class SubagentAccountant:
             cost, model, provider = self._lookup(child)
             if cost is None or Decimal(str(cost)) <= 0:
                 return
+            if self._is_free(provider):  # judged by billing_provider only
+                cost = Decimal(0)
             self._ledger.record(user, child, round_cost(cost), model, provider,
                                 source_kind="subagent")
         if self._after_record is not None:  # PLAN.md 6.3 step 5; never raises

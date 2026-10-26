@@ -130,3 +130,66 @@ def test_no_dedupe_without_turn_id():
     rec.post_api_request(**kw, moa_references=[ref])
     rec.post_api_request(**kw, moa_references=[ref])
     assert [r[2] for r in led.rows] == [Decimal("1.25")] * 2
+
+
+# --- free providers (issue #33) ---
+
+from discord_quota.config import QuotaConfig, parse_config
+
+
+def _cfg(free):
+    return parse_config({"enabled": True, "free_providers": free})
+
+
+def _rec(led, getter, prices=None):
+    return SpendRecorder(led, FakeResolver(), est(prices or {"m": "1"}), config_getter=getter)
+
+
+def test_free_provider_records_zero_with_tokens(caplog):
+    led = FakeLedger()
+    caplog.set_level(logging.WARNING)
+    rec = SpendRecorder(led, FakeResolver(), est({}), config_getter=lambda: _cfg([" Vertex "]))
+    rec.post_api_request(**{**KW, "provider": "VERTEX"})
+    _, _, cost, model, prov, kw = led.rows[0]
+    assert cost == 0 and model == "m" and prov == "VERTEX"
+    assert kw["input_tokens"] == 13 and kw["output_tokens"] == 5
+    assert "Unpriced" not in caplog.text
+
+
+def test_fallback_answer_is_charged():
+    led = FakeLedger()
+    rec = _rec(led, lambda: _cfg(["vertex"]))
+    rec.post_api_request(**{**KW, "provider": "deepseek"})
+    assert led.rows[0][2] == Decimal("1")
+
+
+def test_empty_or_missing_changes_nothing():
+    for getter in (None, lambda: QuotaConfig(), lambda: _cfg(None), lambda: _cfg([])):
+        led = FakeLedger()
+        _rec(led, getter).post_api_request(**{**KW, "provider": "vertex"})
+        assert led.rows[0][2] == Decimal("1")
+
+
+def test_moa_free_advisors_skipped():
+    led = FakeLedger()
+    refs = [{"model": "m", "provider": "vertex", "usage": {}},
+            {"model": "m", "provider": "openrouter", "usage": {}}]
+    _rec(led, lambda: _cfg(["vertex"])).post_api_request(**{**KW, "provider": "vertex",
+                                                            "moa_references": refs})
+    assert led.rows[0][2] == Decimal("1")
+
+
+def test_config_change_applies_without_restart():
+    led = FakeLedger()
+    state = {"cfg": _cfg([])}
+    rec = _rec(led, lambda: state["cfg"])
+    rec.post_api_request(**{**KW, "provider": "vertex"})
+    state["cfg"] = _cfg(["vertex"])
+    rec.post_api_request(**{**KW, "provider": "vertex"})
+    assert [r[2] for r in led.rows] == [Decimal("1"), Decimal("0")]
+
+
+def test_free_providers_parsing():
+    assert parse_config({"free_providers": ["a", "A ", 3, ""]}).free_providers == ("a",)
+    assert parse_config({"free_providers": "x"}).free_providers == ("x",)
+    assert parse_config({"free_providers": {"a": 1}}).free_providers == ()
