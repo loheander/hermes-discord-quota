@@ -46,8 +46,9 @@ def usd(v: Decimal) -> str:
 
 
 def pct(w: WindowStatus) -> str:
-    """Half-up integer percent, capped at 99 unless the window is EXHAUSTED."""
+    """Half-up integer percent: never above 100, and capped at 99 unless EXHAUSTED."""
     n = int((w.percent or Decimal(0)).to_integral_value(rounding=ROUND_HALF_UP))
+    n = min(n, 100)
     if w.state is not WindowState.EXHAUSTED:
         n = min(n, 99)
     return f"{n}%"
