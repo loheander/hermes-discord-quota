@@ -34,7 +34,8 @@ Run the usage check below before each new issue.
 
 ### Default: one Workflow run per story (keeps the orchestrator's context flat)
 
-Run the saved workflow `implement-story` (`.claude/workflows/implement-story.js`) with `args: {"issue": N}`. It runs
+Run the saved workflow `implement-story` with `args: {"issue": N}` (if the name is not found, the session predates
+the file: use `scriptPath: "<repo>/.claude/workflows/implement-story.js"`). It runs
 implement → review → Jev triage (+ PR comment) → fix → Jev merge gate → merge → carry-over notes, up to 3 review
 rounds, inside its own agents, and returns one small object (`status` merged|escalate, `pr`, `score`, `rounds`).
 The orchestrator keeps only that result: report one progress line (issue, rounds, kept/dropped, merge score), then
