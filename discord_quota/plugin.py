@@ -32,6 +32,7 @@ def _ttl_config_getter(loader: Any, ttl: float = CONFIG_TTL_SECONDS, clock: Any 
 def register(ctx: Any) -> None:
     """Called once by Hermes with a ``PluginContext``."""
     from .admission import AdmissionGate
+    from .command import DESCRIPTION, QuotaCommand
     from .config import load_config
     from .footer import FooterHook
     from .guard import MidTurnGuard
@@ -58,3 +59,6 @@ def register(ctx: Any) -> None:
     ctx.register_hook("subagent_stop", SubagentAccountant(ledger, resolver, after_record=guard.after_record).subagent_stop)
     ctx.register_hook("pre_tool_call", guard.pre_tool_call)
     ctx.register_hook("transform_llm_output", FooterHook(getter, ledger, resolver).transform_llm_output)
+    command = QuotaCommand(getter, ledger, resolver)
+    ctx.register_hook("pre_gateway_dispatch", command.observe_dispatch)
+    ctx.register_command("quota", command.handle, description=DESCRIPTION)
