@@ -29,26 +29,37 @@ Repo: `/home/lo/repo/hermes-discord-quota`, base branch `main`.
 
 ## Phase 2: loop, one issue at a time, lowest open `story` number first
 
-For issue N (skip closed ones; start at `--from` if given, else at an issue labelled `ongoing` if one exists). Run the usage check below before each new issue.
+For issue N (skip closed ones; start at `--from` if given, else at an issue labelled `ongoing` if one exists).
+Run the usage check below before each new issue.
+
+### Default: one Workflow run per story (keeps the orchestrator's context flat)
+
+Run the saved workflow `implement-story` (`.claude/workflows/implement-story.js`) with `args: {"issue": N}`. It runs
+implement → review → Jev triage (+ PR comment) → fix → Jev merge gate → merge → carry-over notes, up to 3 review
+rounds, inside its own agents, and returns one small object (`status` merged|escalate, `pr`, `score`, `rounds`).
+The orchestrator keeps only that result: report one progress line (issue, rounds, kept/dropped, merge score), then
+do the usage check and start the next issue. On `escalate`, stop and show the user the reason and open comments.
+To continue a story that is mid-way (after a pause or crash), pass `{"issue": N, "pr": P, "fixRound": K, "open": [...]}`
+with the open comments from `.claude/runs/issue-N/status.json` and `retained-*.json`; it fixes round K, then reviews K+1.
+Do not read agent transcripts or PR diffs into the orchestrator's context; the run files hold the details.
+
+### Manual steps (fallback, or when the user asks to drive a story by hand)
 
 1. **Implement**: follow `/implement-issue N` (marks it `ongoing`, spawns the implementer, keeps its agent id).
 2. **Review**: follow `/review-issue N` (reviewer agent + Jev triage; yields the open comment list).
 3. **Fix** if open comments exist: SendMessage to the same implementer agent id:
-   `Fix review comments for #N (mode B):` followed by each open comment (id, file:line, text). Save its JSON to
-   `.claude/runs/issue-N/fix-<K>.json`; disputed comments go to `status.json` as `disputed` and you decide them
-   (accept the dispute, or send back once with your reasoning). Then go back to step 2.
+   `Fix review comments for #N (mode B), review round K:` followed by each open comment (id, file:line, text).
+   It writes `.claude/runs/issue-N/fix-<K>.json`; disputed comments go to `status.json` as `disputed` and you decide
+   them (accept the dispute, or send back once with your reasoning). Then go back to step 2.
    If the review had no open comments, go straight to step 4.
-4. **Merge gate.**
-   - Hard checks first: latest review `tests == "passed"`, no `unresolved` ids in `status.json`,
-     `gh pr view <pr> --json mergeable` is `MERGEABLE`. If any fails, it is not ready.
-   - Then Jev: write one item summarising the PR (acceptance criteria, test summary, new retained findings,
-     earlier retained ids with status, `gh pr diff <pr> --stat`-style size) and run
-     `python3 -I ~/.claude/skills/jev-classify/scripts/jev_decide.py --spec .claude/skills/orchestrate-plan/merge-spec.json --state "<summary>"`.
-     Ready when `ready_to_merge.value >= 0.7`. Save the output to `merge-<K>.json`.
-   - Not ready: back to step 2 (review + fix again).
-5. **Merge.** `gh pr merge <pr> --squash --delete-branch`, then `git checkout main && git pull --ff-only`,
-   `gh issue edit N --remove-label ongoing` (the PR's `Closes #N` closes the issue; close it explicitly if not).
-   Proceed to the next issue.
+4. **Merge gate and merge**: `python3 .claude/skills/orchestrate-plan/merge_gate.py .claude/runs/issue-N N K`. It runs
+   the hard checks (latest review `tests == "passed"`, no non-resolved ids in `status.json`, `mergeable` is
+   `MERGEABLE`), then Jev `ready_to_merge` (>= 0.7, spec `merge-spec.json`), writes `merge-<K>.json`, and when ready
+   squash-merges, syncs `main`, removes `ongoing` and closes the issue. It prints one JSON line. Not ready: back to
+   step 2. Merged: append notes later stories need to `.claude/runs/carryover.md`, then proceed to the next issue.
+
+Keep the orchestrator's context small: give agents paths (issue number, `carryover.md`, run dir) instead of pasting
+issue bodies or notes, use quiet flags (`-q`) and one-line script output, and never echo agent JSON back.
 
 ## Usage check between stories
 

@@ -2,11 +2,11 @@
 name: issue-reviewer
 description: Read-only code reviewer for one hermes-discord-quota issue PR. Reviews the diff against the issue, PLAN.md and Hermes Agent's real APIs, and checks whether previously retained comments are resolved. Use from /review-issue.
 model: sonnet
-tools: Read, Bash, Grep, Glob
+tools: Read, Write, Bash, Grep, Glob
 ---
 
-You review one pull request in `/home/lo/repo/hermes-discord-quota`. You never edit files, commit or
-push; Bash is for `git`, `gh`, and running tests only.
+You review one pull request in `/home/lo/repo/hermes-discord-quota`. You never edit repo files, commit or
+push; Bash is for `git`, `gh`, and running tests only. Write is only for your report file (see Output).
 
 ## Inputs (in the prompt)
 
@@ -28,8 +28,10 @@ push; Bash is for `git`, `gh`, and running tests only.
 
 ## Output
 
-Your final message is the only thing the orchestrator receives, and a final message without the JSON block
-is unusable even if the prose above it is complete. End it with exactly one fenced JSON block, nothing after it:
+Write the report JSON to `/home/lo/repo/hermes-discord-quota/.claude/runs/issue-<N>/review-<K>.json` (create the
+directory if needed). Your final message is read by an orchestrator whose context grows with every story: at
+most 5 lines of prose (no restating of findings), then exactly one fenced JSON block, nothing after it. A final
+message without the JSON block is unusable even if the prose above it is complete.
 
 ```json
 {"pr": 34, "round": 2, "tests": "passed|failed", "test_summary": "17 passed",

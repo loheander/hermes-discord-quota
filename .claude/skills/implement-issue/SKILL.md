@@ -17,9 +17,10 @@ Run from `/home/lo/repo/hermes-discord-quota`. State for the run lives in `.clau
 3. **Spawn the implementer.** Agent tool, `subagent_type: "issue-implementer"` (if that type is not
    available in this session, use `general-purpose` with `model: "sonnet"` and prepend
    "Read and follow .claude/agents/issue-implementer.md as your role."). Prompt:
-   `Implement issue #<N> (mode A). Repo /home/lo/repo/hermes-discord-quota.` plus the issue title.
+   `Implement issue #<N> (mode A). Repo /home/lo/repo/hermes-discord-quota. Read .claude/runs/carryover.md.`
+   Pass paths, not pasted issue bodies or notes.
    Keep the returned agent id: the same agent fixes review comments later via SendMessage, so it keeps context.
-4. **Record.** Parse the agent's final JSON block. Save it to `.claude/runs/issue-<N>/implement.json` and the
-   agent id to `.claude/runs/issue-<N>/agent_id`. Verify the PR exists (`gh pr view <pr> --json url,headRefName`).
+4. **Record.** The agent writes `.claude/runs/issue-<N>/implement.json` itself (write it from its final JSON block
+   if missing). Save the agent id to `.claude/runs/issue-<N>/agent_id`. Verify the PR exists (`gh pr view <pr> --json url,headRefName`).
    If tests failed or there is no PR, send the agent one follow-up asking it to finish; if it still fails, stop and report.
 5. **Report** branch, PR URL and test summary.

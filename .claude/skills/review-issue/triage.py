@@ -1,6 +1,8 @@
-"""triage.py <run_dir> <round> <issue title>: Jev-triage review-<K>.json, write retained-<K>.json, comment-<K>.md, update status.json."""
+"""triage.py <run_dir> <round> <issue title> [--post <pr>]: Jev-triage review-<K>.json, write retained-<K>.json,
+comment-<K>.md, update status.json; with --post, also post the comment on the PR. Prints one compact JSON line."""
 import json, subprocess, sys, os
 R, K, title = sys.argv[1], sys.argv[2], sys.argv[3]
+post = sys.argv[sys.argv.index("--post") + 1] if "--post" in sys.argv else None
 r = json.load(open(f"{R}/review-{K}.json"))
 st = json.load(open(f"{R}/status.json")) if os.path.exists(f"{R}/status.json") else {}
 for p in r.get("previous", []): st[p["id"]] = p["status"]
@@ -34,4 +36,7 @@ b += "**Retained (to fix):**\n\n" + ("\n".join(map(fmt, kept)) or "none") + "\n\
 b += ("<details><summary>Dropped (" + str(len(dropped)) + ")</summary>\n\n" + "\n".join(map(fmt, dropped)) + "\n\n</details>\n\n") if dropped else "**Dropped:** none.\n\n"
 if r.get("previous"): b += "**Earlier retained:** " + ", ".join(f"{p['id']} {p['status']}" for p in r["previous"]) + "\n"
 open(f"{R}/comment-{K}.md", "w").write(b)
-print(json.dumps({"kept": [x["id"] for x in kept], "dropped": [x["id"] for x in dropped], "flagged": flagged, "scores": {k: v["jev"] for k, v in ((x["id"], x) for x in kept + dropped)}, "unresolved": [k for k, v in st.items() if v != "resolved"]}, indent=1))
+if post:
+    subprocess.run(["gh", "pr", "comment", post, "--body-file", f"{R}/comment-{K}.md"], capture_output=True, check=True)
+print(json.dumps({"kept": [x["id"] for x in kept], "dropped": [x["id"] for x in dropped], "flagged": flagged,
+                  "unresolved": [k for k, v in st.items() if v != "resolved"], "posted": bool(post)}))
