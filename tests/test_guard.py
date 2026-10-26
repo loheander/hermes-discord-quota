@@ -150,3 +150,41 @@ def test_recorder_triggers_guard():
     rec.post_api_request(session_id="s1", turn_id="t1", model="m", provider="p", usage={},
                          assistant_tool_call_count=2)
     assert len(calls) == 1 and led.rows
+
+
+def test_missing_turn_id_does_not_suppress_later_turns():
+    g, calls, _ = make(spent="1")
+    g.after_record("42", "s1", None, 1)
+    g.after_record("42", "s1", None, 1)
+    assert len(calls) == 2
+
+
+def test_failed_interrupt_allows_retry_in_same_turn():
+    state = {"n": 0}
+
+    def flaky(a, message=None, *, tool_reason=None):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise RuntimeError("x")
+        return True
+    g, _, _ = make(spent="1", interrupter=flaky)
+    g.pre_tool_call(session_id="s1", turn_id="t1")
+    g.pre_tool_call(session_id="s1", turn_id="t1")
+    g.pre_tool_call(session_id="s1", turn_id="t1")
+    assert state["n"] == 2
+
+
+def test_no_agent_allows_retry_in_same_turn():
+    running = {}
+    g, calls, agent = make(spent="1", running=running)
+    g.pre_tool_call(session_id="s1", turn_id="t1")
+    running["k"] = agent
+    g.pre_tool_call(session_id="s1", turn_id="t1")
+    assert len(calls) == 1
+
+
+def test_pending_sentinel_not_interrupted():
+    sentinel = object()
+    g, calls, _ = make(spent="1", running={"k": sentinel, "o": SimpleNamespace(session_id="s1")})
+    assert g.pre_tool_call(session_id="s1", turn_id="t1")["action"] == "block"
+    assert calls == []

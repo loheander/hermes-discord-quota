@@ -107,13 +107,13 @@ class MidTurnGuard:
     # -- hard interrupt -----------------------------------------------------
     def _request_interrupt(self, session_id: str, turn_id: str | None) -> None:
         """At most once per turn; failures are logged, never raised."""
-        key = (session_id or "", turn_id or "")
-        with self._lock:
-            if key in self._interrupted:
-                return
-            self._interrupted[key] = True
-            while len(self._interrupted) > _MAX_TURNS:
-                self._interrupted.popitem(last=False)
+        # Without a turn id there is no safe dedupe scope (a session-only key
+        # would suppress every later turn), so repeat requests are allowed.
+        key = (session_id or "", turn_id) if turn_id else None
+        if key is not None:
+            with self._lock:
+                if key in self._interrupted:
+                    return
         try:
             agent = self._find_agent(session_id)
             if agent is None:
@@ -122,8 +122,15 @@ class MidTurnGuard:
                 return
             if not self._interrupt(agent, None, tool_reason=INTERRUPT_REASON):
                 logger.warning("discord_quota: agent does not support interrupt")
+                return
         except Exception:
             logger.warning("discord_quota: hard interrupt failed", exc_info=True)
+            return
+        if key is not None:  # only a successful interrupt consumes the once-per-turn key
+            with self._lock:
+                self._interrupted[key] = True
+                while len(self._interrupted) > _MAX_TURNS:
+                    self._interrupted.popitem(last=False)
 
     def _find_agent(self, session_id: str) -> Any:
         gateway = self._gateway()
@@ -137,7 +144,8 @@ class MidTurnGuard:
                 return agent
         if session_id:
             for agent in list(running.values()):
-                if getattr(agent, "session_id", None) == session_id:
+                if (getattr(agent, "session_id", None) == session_id
+                        and callable(getattr(agent, "interrupt", None))):
                     return agent
         return None
 
