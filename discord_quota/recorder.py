@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from collections import OrderedDict
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
@@ -58,29 +59,38 @@ class SpendRecorder:
         self._estimate = estimator or _default_estimator
         self._seen_refs: "OrderedDict[tuple, set[str]]" = OrderedDict()
         self._max_turns = 256
+        self._lock = threading.Lock()
 
     def _fresh_refs(self, key: tuple, refs: Any) -> list:
-        """Refs not yet charged for this turn (MoA repeats refs on cache hits)."""
+        """Refs not yet charged for this turn (MoA repeats refs on cache hits).
+
+        Dedupes only against fingerprints from previous calls, so identical
+        refs inside one list are all charged. Skipped when turn_id is missing.
+        """
         if not isinstance(refs, (list, tuple)):
             return []
-        seen = self._seen_refs.get(key)
-        if seen is None:
-            seen = self._seen_refs[key] = set()
-            while len(self._seen_refs) > self._max_turns:
-                self._seen_refs.popitem(last=False)
-        else:
-            self._seen_refs.move_to_end(key)
-        fresh = []
-        for ref in refs:
-            try:
-                fp = json.dumps(ref, sort_keys=True, default=str)
-            except (TypeError, ValueError):
-                fp = repr(ref)
-            if fp in seen:
-                continue
-            seen.add(fp)
-            fresh.append(ref)
-        return fresh
+        if not key[1]:
+            return list(refs)
+        with self._lock:
+            seen = self._seen_refs.get(key)
+            if seen is None:
+                seen = self._seen_refs[key] = set()
+                while len(self._seen_refs) > self._max_turns:
+                    self._seen_refs.popitem(last=False)
+            else:
+                self._seen_refs.move_to_end(key)
+            previous = set(seen)
+            fresh = []
+            for ref in refs:
+                try:
+                    fp = json.dumps(ref, sort_keys=True, default=str)
+                except (TypeError, ValueError):
+                    fp = repr(ref)
+                if fp in previous:
+                    continue
+                seen.add(fp)
+                fresh.append(ref)
+            return fresh
 
     def _price(self, model: str, usage: dict, provider: str | None,
                base_url: str | None) -> Decimal | None:

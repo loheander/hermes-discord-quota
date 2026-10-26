@@ -110,3 +110,23 @@ def test_moa_dedupe_state_bounded():
     for i in range(10):
         rec.post_api_request(**{**KW, "turn_id": f"t{i}"}, moa_references=[{"model": "a"}])
     assert len(rec._seen_refs) == 3
+
+
+def test_identical_refs_in_one_list_all_charged():
+    led = FakeLedger()
+    ref = {"model": "a", "provider": "p", "usage": {}}
+    rec = SpendRecorder(led, FakeResolver(), est({"m": "1", "a": "0.25"}))
+    rec.post_api_request(**KW, moa_references=[ref, dict(ref)])
+    assert led.rows[0][2] == Decimal("1.50")
+    rec.post_api_request(**KW, moa_references=[ref, dict(ref)])
+    assert led.rows[1][2] == Decimal("1")
+
+
+def test_no_dedupe_without_turn_id():
+    led = FakeLedger()
+    ref = {"model": "a", "provider": "p", "usage": {}}
+    rec = SpendRecorder(led, FakeResolver(), est({"m": "1", "a": "0.25"}))
+    kw = {**KW, "turn_id": None}
+    rec.post_api_request(**kw, moa_references=[ref])
+    rec.post_api_request(**kw, moa_references=[ref])
+    assert [r[2] for r in led.rows] == [Decimal("1.25")] * 2
